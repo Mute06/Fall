@@ -42,11 +42,14 @@ MonoBehaviour:
   spawnInvisibleBoundaries: 1
   boundaryWallHeight: 45
   boundaryWallThickness: 3
-  grassTerrainLayer: {fileID: 8574412962073106934, guid: 43f359519ff2ffa47aecc5e8d5db8965, type: 2}
-  rockTerrainLayer: {fileID: 8574412962073106934, guid: 08089bc5bac138a4ba82d17dbd27e356, type: 2}
-  pathTerrainLayer: {fileID: 8574412962073106934, guid: 08089bc5bac138a4ba82d17dbd27e356, type: 2}
-  rockSlopeStartDegrees: 28
-  rockSlopeFullDegrees: 40
+  grassTerrainLayer: {fileID: 8574412962073106934, guid: 230d99471a8ceec4e91c4455a1f70044, type: 2}
+  rockTerrainLayer: {fileID: 8574412962073106934, guid: 3d4206861a951f648b37ee22d964bf26, type: 2}
+  pathTerrainLayer: {fileID: 8574412962073106934, guid: 1f75228414d5254428e95e86edd17bb3, type: 2}
+  pathTextureWidth: 3.5
+  pathSlopeFadeStartDegrees: 32
+  pathMaxSlopeDegrees: 38
+  rockSlopeStartDegrees: 38
+  rockSlopeFullDegrees: 50
   anchorableLayerName: Anchorable
   treePrefabs:
   - label: Oak Tree
