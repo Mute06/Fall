@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -38,13 +38,27 @@ namespace FirstPersonSystem
             }
         }
 
+        private RaycastHit lastHit;
+        public Camera Cam => _cam;
+        public Vector3 InteractionRayPoint => interactionRayPoint;
+        public float InteractionDistance => interactionDistance;
+        public LayerMask InteractionLayers => interactionLayers;
+        public Interactable CurrentInteractable => currentInteractable;
+        public RaycastHit LastHit => lastHit;
+
         private void HandleInteractionCheck()
         {
             if (Physics.Raycast(_cam.ViewportPointToRay(interactionRayPoint), out RaycastHit hit, interactionDistance, interactionLayers))
             {
-                if (hit.collider.gameObject.layer == 8 && (currentInteractable == null || hit.collider.gameObject.GetInstanceID() != currentInteractable.GetInstanceID()))
+                lastHit = hit;
+                if (hit.collider.TryGetComponent(out Interactable interactable) && (currentInteractable == null || interactable.GetInstanceID() != currentInteractable.GetInstanceID()))
                 {
-                    hit.collider.TryGetComponent(out currentInteractable);
+                    if (currentInteractable != null && !lostFocus)
+                    {
+                        currentInteractable.OnLoseFocus();
+                    }
+
+                    currentInteractable = interactable;
 
                     if (!didLookedAtCurrentInteractable)
                     {
@@ -58,7 +72,6 @@ namespace FirstPersonSystem
                     {
                         currentInteractable.OnFocus();
                     }
-
                 }
             }
             else if (currentInteractable)
@@ -68,7 +81,6 @@ namespace FirstPersonSystem
                     currentInteractable.OnLoseFocus();
                     lostFocus = true;
                 }
-
 
                 if (!wasInteracting)
                 {
@@ -91,6 +103,7 @@ namespace FirstPersonSystem
             {
                 if (Physics.Raycast(_cam.ViewportPointToRay(interactionRayPoint), out RaycastHit hit, interactionDistance, interactionLayers))
                 {
+                    lastHit = hit;
                     if (_input.GetInput_Interacted())
                     {
                         wasInteracting = true;

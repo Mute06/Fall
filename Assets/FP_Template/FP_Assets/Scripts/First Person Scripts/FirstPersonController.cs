@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -88,6 +88,8 @@ namespace FirstPersonSystem
         private Coroutine changeFOVRoutine;
         private bool canLook = true;
         private ExamineSystem examineSystem;
+        private Vector3 externalVelocity;
+        public CharacterController Controller => characterController;
 
 
         //Slope sliding
@@ -324,7 +326,19 @@ namespace FirstPersonSystem
                 moveDirection += new Vector3(hitPointNormal.x, -hitPointNormal.y, hitPointNormal.z) * slopeSpeed;
             }
 
-            characterController.Move(moveDirection * Time.deltaTime);
+            Vector3 finalMove = (moveDirection + externalVelocity) * Time.deltaTime;
+            characterController.Move(finalMove);
+            externalVelocity = Vector3.Lerp(externalVelocity, Vector3.zero, 10f * Time.deltaTime);
+        }
+
+        public void AddExternalForce(Vector3 force)
+        {
+            externalVelocity += force;
+        }
+
+        public void ApplyExternalDisplacement(Vector3 displacement)
+        {
+            characterController.Move(displacement);
         }
 
 

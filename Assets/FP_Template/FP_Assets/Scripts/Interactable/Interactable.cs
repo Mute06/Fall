@@ -6,7 +6,11 @@ namespace FirstPersonSystem
     {
         public virtual void Awake()
         {
-            gameObject.layer = 8; // Interactable layer
+            if (gameObject.layer == 0)
+            {
+                int layer = LayerMask.NameToLayer("Interactable");
+                gameObject.layer = layer != -1 ? layer : 8;
+            }
         }
         public abstract void OnInteractStart(FirstPersonController player);
         public abstract void OnFocus();

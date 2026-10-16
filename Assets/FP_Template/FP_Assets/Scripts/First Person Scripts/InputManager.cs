@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -31,13 +31,15 @@ namespace FirstPersonSystem
         [SerializeField] private KeyCode zoomKey = KeyCode.Mouse1;
         [SerializeField] private KeyCode interactKey = KeyCode.Mouse0;
         [SerializeField] private KeyCode flashlightKey = KeyCode.F;
+        [SerializeField] private KeyCode cancelKey = KeyCode.Q;
         private float _moveInputHorizontal, _moveInputVertical, _mouseX, _mouseY;
-        private bool _jumpedThisFrame, _sprinting, _crouching, _zoomDown, _zoomUp, _interacted, _interacting, _interactEnd, _flashlight;
+        private bool _jumpedThisFrame, _sprinting, _crouching, _zoomDown, _zoomUp, _interacted, _interacting, _interactEnd, _flashlight, _cancelDown;
 
         public delegate void InputEvent();
         public event InputEvent OnFlashlight;
         public event InputEvent OnRightMouseDown;
         public event InputEvent OnInteracted;
+        public event InputEvent OnCancel;
 
         private void Update()
         {
@@ -56,8 +58,9 @@ namespace FirstPersonSystem
             _interacting = Input.GetKey(interactKey);
             _interactEnd = Input.GetKeyUp(interactKey);
             _flashlight = Input.GetKeyDown(flashlightKey);
-
             if (_flashlight) { OnFlashlight?.Invoke(); }
+            _cancelDown = Input.GetKeyDown(cancelKey);
+            if (_cancelDown) { OnCancel?.Invoke(); }
         }
 
         public float GetInput_Horizontal()
@@ -152,6 +155,11 @@ namespace FirstPersonSystem
         public bool GetInput_AnyMoveInput()
         {
             return Input.GetAxisRaw("Horizontal") != 0 || Input.GetAxisRaw("Vertical") != 0;
+        }
+
+        public bool GetInput_CancelDown()
+        {
+            return _cancelDown;
         }
     }
 }
