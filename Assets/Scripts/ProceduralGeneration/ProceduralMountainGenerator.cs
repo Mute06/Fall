@@ -33,6 +33,7 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Header("Debug & Scene Visualization")]
         [SerializeField] private bool drawGoldenPathGizmos = true;
         [SerializeField] private bool drawSafeZoneGizmos = true;
+        [SerializeField] private bool drawBoundaryGizmos = true;
 
         // Runtime / Cached State
         private GoldenPathGenerator pathGenerator = new GoldenPathGenerator();
@@ -63,7 +64,7 @@ namespace FirstPersonSystem.ProceduralGeneration
         }
 
         /// <summary>
-        /// Executes the full 6-stage procedural mountain and object placement algorithm.
+        /// Executes the procedural mountain, golden path, forest, and hazard generation.
         /// Safe to call both in Edit Mode and Play Mode.
         /// </summary>
         [ContextMenu("Generate Mountain")]
@@ -77,14 +78,20 @@ namespace FirstPersonSystem.ProceduralGeneration
             // Stage 1: Golden Path (Random Walk with Momentum from (0,0) to (0,250) stepping 8-12m)
             pathGenerator.Generate(activeProfile, seed);
 
-            // Stage 2 & 3: Stepped Longitudinal Elevation + 2D Heightmap Synthesis + Path Carving + Valley Cliffs
+            // Stage 2 & 3: Stepped Longitudinal Elevation + 2D Heightmap Synthesis + Path Carving (with natural edges)
             SynthesizeHeightmap(activeProfile, terrainData, terrainOrigin, seed);
 
             // Stage 4: Splatmap Painting (Grass default ground + optional Rock/Path layers)
             ApplyTerrainTextures(activeProfile, terrainData);
 
-            // Prepare container hierarchy for spawned prefabs
-            CreateSpawnContainers(out Transform anchorsParent, out Transform slopePropsParent, out Transform decorParent);
+            // Prepare container hierarchy for spawned objects
+            CreateSpawnContainers(
+                out Transform anchorsParent,
+                out Transform denseForestParent,
+                out Transform hazardsParent,
+                out Transform decorParent,
+                out Transform boundariesParent);
+
             occupancyGrid.Clear();
 
             // Reserve spawn clearance at Player & Coffin start area
@@ -92,13 +99,30 @@ namespace FirstPersonSystem.ProceduralGeneration
             occupancyGrid.Register(startSpawnXZ, 4.5f);
 
             // Stage 5: Guaranteed-Solvable Anchor Spawning along Golden Path nodes
+            // Uses a random tree and random rock from the shared treePrefabs & rockPrefabs pools
             int anchorCount = SpawnGoldenPathAnchors(activeProfile, anchorsParent, seed + 101);
 
-            // Stage 6A: Slope-Stratified Poisson Disk Sampling (<20°, 20°-38°, >38°)
-            int slopePropCount = SpawnSlopeStratifiedObjects(activeProfile, slopePropsParent, seed + 202);
+            // Stage 6A: Dense Forest Spawning
+            // Fills the mountain with a dense forest of trees using the multiple treePrefabs
+            int forestTreeCount = 0;
+            if (activeProfile.enableDenseForest)
+            {
+                forestTreeCount = SpawnDenseForest(activeProfile, denseForestParent, seed + 202);
+            }
 
-            // Stage 6B: Decorative Small Objects Scatter (Small Rocks, Bushes, etc.)
-            int decorCount = SpawnDecorativeObjects(activeProfile, decorParent, seed + 303);
+            // Stage 6B: Slope Hazards & Rocks
+            // Slope < 20°: Leaf piles & deadfall logs
+            // Slope > 38°: Jagged rocks from rockPrefabs and loose scree zones
+            int hazardCount = SpawnSlopeHazardsAndRocks(activeProfile, hazardsParent, seed + 303);
+
+            // Stage 6C: Decorative Small Objects Scatter (Small Rocks, Bushes, etc.)
+            int decorCount = SpawnDecorativeObjects(activeProfile, decorParent, seed + 404);
+
+            // Stage 7: Invisible Boundary Colliders (North, South, East, West)
+            if (activeProfile.spawnInvisibleBoundaries)
+            {
+                SpawnInvisibleBoundaryColliders(activeProfile, boundariesParent);
+            }
 
             // Position Player & Coffin on the starting flat zone if requested
             if (repositionActorsOnGenerate)
@@ -106,7 +130,7 @@ namespace FirstPersonSystem.ProceduralGeneration
                 PositionStartingActors(activeProfile);
             }
 
-            Debug.Log($"[ProceduralMountainGenerator] Generated mountain (Seed: {seed}, Elevation Gain: {activeProfile.targetElevationGain}m, Golden Path Nodes: {pathGenerator.Nodes.Count}, Guaranteed Anchors: {anchorCount}, Slope Objects: {slopePropCount}, Decorations: {decorCount}).");
+            Debug.Log($"[ProceduralMountainGenerator] Mountain generated (Seed: {seed}, Elev: {activeProfile.targetElevationGain}m, Path Nodes: {pathGenerator.Nodes.Count}, Path Anchors: {anchorCount}, Forest Trees: {forestTreeCount}, Slope Hazards/Rocks: {hazardCount}, Props: {decorCount}).");
         }
 
         [ContextMenu("Randomize Seed & Generate")]
@@ -116,7 +140,7 @@ namespace FirstPersonSystem.ProceduralGeneration
             GenerateMountain();
         }
 
-        [ContextMenu("Clear Generated Objects")]
+        [ContextMenu("Clear Spawned Objects")]
         public void ClearSpawnedObjects()
         {
             Transform existing = transform.Find("Generated_Mountain_Objects");
@@ -194,7 +218,7 @@ namespace FirstPersonSystem.ProceduralGeneration
             float totalWidthX = cfg.playableWidth + cfg.boundaryMargin * 2f;
             float climbDistanceZ = Mathf.Max(50f, cfg.pathEndXZ.y - cfg.pathStartXZ.y);
             float totalLengthZ = climbDistanceZ + cfg.summitSafeLength + cfg.boundaryMargin * 2f;
-            float maxTerrainHeightY = cfg.targetElevationGain + cfg.boundaryCliffHeight + cfg.terrainMaxHeightHeadroom;
+            float maxTerrainHeightY = cfg.targetElevationGain + (cfg.enableBoundaryCliffs ? cfg.boundaryCliffHeight : 0f) + cfg.terrainMaxHeightHeadroom;
 
             int hmRes = Mathf.ClosestPowerOfTwo(Mathf.Clamp(cfg.heightmapResolution - 1, 64, 2048)) + 1;
             terrainData.heightmapResolution = hmRes;
@@ -221,7 +245,6 @@ namespace FirstPersonSystem.ProceduralGeneration
             Vector3 terrainSize = terrainData.size;
             float maxH = terrainSize.y;
 
-            // Note: Unity Terrain SetHeights expects heights[zIndex, xIndex] in normalized [0..1]
             float[,] heights = new float[res, res];
 
             System.Random noiseRng = new System.Random(currentSeed + 17);
@@ -259,12 +282,11 @@ namespace FirstPersonSystem.ProceduralGeneration
 
                     // 2. Multi-octave FBM Mountain Noise
                     float fbm = SampleFBM(worldXZ, cfg.primaryNoiseScale, octaveOffsets);
-                    // Convert [0..1] FBM to signed [-0.45..+0.55] with ridges
                     float ridgeNoise = (fbm - 0.42f) * cfg.mountainRoughnessAmplitude * startFlatFade * safeZoneNoiseDamp;
 
-                    // Subtle natural valley cupping across X so the mountain feels like a pass
+                    // Subtle natural valley cupping across X so the mountain feels natural towards the edges
                     float lateralRatio = Mathf.Clamp01(Mathf.Abs(worldX) / Mathf.Max(1f, halfPlayableWidth));
-                    float valleyCupRise = lateralRatio * lateralRatio * 4.5f * startFlatFade;
+                    float valleyCupRise = lateralRatio * lateralRatio * 3.5f * startFlatFade;
 
                     float rawMountainHeight = baseElevation + ridgeNoise + valleyCupRise;
 
@@ -283,7 +305,7 @@ namespace FirstPersonSystem.ProceduralGeneration
                         carveMask = (1f - t * t * (3f - 2f * t)) * cfg.pathCarveStrength;
                     }
 
-                    // Slight concave cradle in the very center of the trail
+                    // Concave cradle in center of the trail
                     float centerTrench = 0f;
                     if (distToPath < cfg.pathInnerCarveRadius)
                     {
@@ -293,18 +315,14 @@ namespace FirstPersonSystem.ProceduralGeneration
 
                     float carvedHeight = Mathf.Lerp(rawMountainHeight, pathSpineElevation - centerTrench, carveMask);
 
-                    // 4. Steep Bounded Valley / Cliff Walls around map edges (Left, Right, Back, Summit)
-                    float cliffRise = ComputeBoundaryCliffHeight(
-                        worldX,
-                        worldZ,
-                        halfPlayableWidth,
-                        halfTotalWidth,
-                        startZ,
-                        summitEndZ,
-                        cfg.boundaryMargin,
-                        cfg.boundaryCliffHeight,
-                        cfg.boundaryCliffSharpness,
-                        fbm);
+                    // 4. Edges: Keep natural unless boundary cliffs are explicitly enabled
+                    float cliffRise = 0f;
+                    if (cfg.enableBoundaryCliffs)
+                    {
+                        cliffRise = ComputeBoundaryCliffHeight(
+                            worldX, worldZ, halfPlayableWidth, halfTotalWidth,
+                            startZ, summitEndZ, cfg.boundaryMargin, cfg.boundaryCliffHeight, 2.0f, fbm);
+                    }
 
                     float finalWorldHeight = Mathf.Max(0f, carvedHeight + cliffRise);
                     heights[zIdx, xIdx] = Mathf.Clamp01(finalWorldHeight / maxH);
@@ -315,45 +333,19 @@ namespace FirstPersonSystem.ProceduralGeneration
         }
 
         private float ComputeBoundaryCliffHeight(
-            float worldX,
-            float worldZ,
-            float halfPlayableWidth,
-            float halfTotalWidth,
-            float startZ,
-            float summitEndZ,
-            float margin,
-            float cliffHeight,
-            float sharpness,
-            float fbmValue)
+            float worldX, float worldZ, float halfPlayableWidth, float halfTotalWidth,
+            float startZ, float summitEndZ, float margin, float cliffHeight, float sharpness, float fbmValue)
         {
-            // Left / Right valley walls
             float absX = Mathf.Abs(worldX);
-            float lateralEdgeT = 0f;
-            if (absX > halfPlayableWidth)
-            {
-                lateralEdgeT = Mathf.Clamp01((absX - halfPlayableWidth) / Mathf.Max(1f, halfTotalWidth - halfPlayableWidth));
-            }
-
-            // Back wall behind Z = startZ
-            float backEdgeT = 0f;
-            if (worldZ < startZ)
-            {
-                backEdgeT = Mathf.Clamp01((startZ - worldZ) / Mathf.Max(1f, margin));
-            }
-
-            // Summit wall beyond Z = summitEndZ
-            float frontEdgeT = 0f;
-            if (worldZ > summitEndZ)
-            {
-                frontEdgeT = Mathf.Clamp01((worldZ - summitEndZ) / Mathf.Max(1f, margin));
-            }
+            float lateralEdgeT = (absX > halfPlayableWidth) ? Mathf.Clamp01((absX - halfPlayableWidth) / Mathf.Max(1f, halfTotalWidth - halfPlayableWidth)) : 0f;
+            float backEdgeT = (worldZ < startZ) ? Mathf.Clamp01((startZ - worldZ) / Mathf.Max(1f, margin)) : 0f;
+            float frontEdgeT = (worldZ > summitEndZ) ? Mathf.Clamp01((worldZ - summitEndZ) / Mathf.Max(1f, margin)) : 0f;
 
             float combinedEdgeT = Mathf.Max(lateralEdgeT, Mathf.Max(backEdgeT, frontEdgeT));
             if (combinedEdgeT <= 0.0001f) return 0f;
 
             float curved = Mathf.Pow(combinedEdgeT, sharpness);
-            float cragDetail = (0.75f + 0.5f * fbmValue);
-            return curved * cliffHeight * cragDetail;
+            return curved * cliffHeight * (0.75f + 0.5f * fbmValue);
         }
 
         private float SampleFBM(Vector2 worldXZ, float baseScale, Vector2[] octaveOffsets)
@@ -390,7 +382,6 @@ namespace FirstPersonSystem.ProceduralGeneration
             TerrainLayer grassLayer = cfg.grassTerrainLayer;
             if (grassLayer == null)
             {
-                // Keep existing first layer if already assigned on TerrainData, or create a fallback Grass layer
                 if (terrainData.terrainLayers != null && terrainData.terrainLayers.Length > 0 && terrainData.terrainLayers[0] != null)
                 {
                     grassLayer = terrainData.terrainLayers[0];
@@ -449,8 +440,7 @@ namespace FirstPersonSystem.ProceduralGeneration
                     if (rockLayerIndex != -1)
                     {
                         rockWeight = Mathf.SmoothStep(
-                            0f,
-                            1f,
+                            0f, 1f,
                             Mathf.InverseLerp(cfg.rockSlopeStartDegrees, cfg.rockSlopeFullDegrees, slopeDeg));
                     }
 
@@ -496,8 +486,10 @@ namespace FirstPersonSystem.ProceduralGeneration
 
         private void CreateSpawnContainers(
             out Transform anchorsParent,
-            out Transform slopePropsParent,
-            out Transform decorParent)
+            out Transform denseForestParent,
+            out Transform hazardsParent,
+            out Transform decorParent,
+            out Transform boundariesParent)
         {
             GameObject rootGO = new GameObject("Generated_Mountain_Objects");
             rootGO.transform.SetParent(transform, false);
@@ -507,26 +499,37 @@ namespace FirstPersonSystem.ProceduralGeneration
             anchorsGO.transform.SetParent(generatedRoot, false);
             anchorsParent = anchorsGO.transform;
 
-            GameObject slopeGO = new GameObject("2_PoissonSlope_Objects");
-            slopeGO.transform.SetParent(generatedRoot, false);
-            slopePropsParent = slopeGO.transform;
+            GameObject forestGO = new GameObject("2_DenseForest_Trees");
+            forestGO.transform.SetParent(generatedRoot, false);
+            denseForestParent = forestGO.transform;
 
-            GameObject decorGO = new GameObject("3_Decorative_SmallObjects");
+            GameObject hazardsGO = new GameObject("3_SlopeHazards_And_Rocks");
+            hazardsGO.transform.SetParent(generatedRoot, false);
+            hazardsParent = hazardsGO.transform;
+
+            GameObject decorGO = new GameObject("4_Decorative_SmallObjects");
             decorGO.transform.SetParent(generatedRoot, false);
             decorParent = decorGO.transform;
+
+            GameObject boundsGO = new GameObject("BoundaryColliders");
+            boundsGO.transform.SetParent(generatedRoot, false);
+            boundariesParent = boundsGO.transform;
         }
 
         /// <summary>
         /// Stage 5: Guaranteed-Solvable Anchor Spawning.
         /// At each node along the Golden Path (every 8-12m from (0,0) to (0,250)),
-        /// spawns at least one sturdy Oak or Boulder so the mountain is 100% completable.
+        /// picks a random tree or rock from the shared treePrefabs & rockPrefabs pools.
         /// </summary>
         private int SpawnGoldenPathAnchors(
             MountainGenerationProfile cfg,
             Transform parent,
             int stageSeed)
         {
-            if (!HasValidEntry(cfg.goldenPathAnchors))
+            bool hasTrees = HasValidEntry(cfg.treePrefabs);
+            bool hasRocks = HasValidEntry(cfg.rockPrefabs);
+
+            if (!hasTrees && !hasRocks)
             {
                 return 0;
             }
@@ -542,7 +545,6 @@ namespace FirstPersonSystem.ProceduralGeneration
             {
                 GoldenPathNode node = nodes[i];
 
-                // Alternate primary side or pick randomly so anchors flank both sides of the climb
                 int primarySide = (rng.NextDouble() < 0.5) ? 1 : -1;
                 int countForThisNode = cfg.anchorsPerPathNode;
                 if (rng.NextDouble() < cfg.bonusSecondAnchorChance)
@@ -552,7 +554,11 @@ namespace FirstPersonSystem.ProceduralGeneration
 
                 for (int a = 0; a < countForThisNode; a++)
                 {
-                    SpawnablePrefabEntry chosenEntry = SelectWeightedEntry(cfg.goldenPathAnchors, rng);
+                    // Pick from treePrefabs or rockPrefabs based on goldenPathTreeRatio
+                    bool pickTree = (rng.NextDouble() < cfg.goldenPathTreeRatio && hasTrees) || !hasRocks;
+                    List<SpawnablePrefabEntry> chosenPool = pickTree ? cfg.treePrefabs : cfg.rockPrefabs;
+                    SpawnablePrefabEntry chosenEntry = SelectWeightedEntry(chosenPool, rng);
+
                     if (chosenEntry == null || chosenEntry.prefab == null) continue;
 
                     int side = (a % 2 == 0) ? primarySide : -primarySide;
@@ -576,24 +582,26 @@ namespace FirstPersonSystem.ProceduralGeneration
         }
 
         /// <summary>
-        /// Stage 6A: Runs Poisson Disk Sampling across the remaining terrain and classifies each sample by slope:
-        /// - Slope < 20°: Leaf piles (low friction triggers) and deadfall logs (+ optional lowland trees)
-        /// - Slope 20° - 38°: Birch and Oak trees (high abundance)
-        /// - Slope > 38°: Jagged Boulders and loose scree zones (high rollback hazard)
+        /// Stage 6A: Dense Forest of Trees.
+        /// Fills the mountain terrain with a dense forest using the multiple treePrefabs.
+        /// All trees are anchorable by the winch and possess colliders.
         /// </summary>
-        private int SpawnSlopeStratifiedObjects(
+        private int SpawnDenseForest(
             MountainGenerationProfile cfg,
             Transform parent,
             int stageSeed)
         {
+            if (!HasValidEntry(cfg.treePrefabs))
+                return 0;
+
             System.Random rng = new System.Random(stageSeed);
 
-            float halfWidth = cfg.playableWidth * 0.5f + cfg.boundaryMargin * 0.35f;
-            float zMin = cfg.pathStartXZ.y - cfg.boundaryMargin * 0.25f;
-            float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength + cfg.boundaryMargin * 0.25f;
+            float halfWidth = cfg.playableWidth * 0.5f;
+            float zMin = cfg.pathStartXZ.y;
+            float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength;
 
             Rect sampleBounds = new Rect(-halfWidth, zMin, halfWidth * 2f, zMax - zMin);
-            List<Vector2> candidates = PoissonDiskSampler.GeneratePoints(sampleBounds, cfg.primaryPoissonRadius, rng);
+            List<Vector2> candidates = PoissonDiskSampler.GeneratePoints(sampleBounds, cfg.denseForestPoissonRadius, rng);
 
             int spawnedCount = 0;
 
@@ -601,49 +609,32 @@ namespace FirstPersonSystem.ProceduralGeneration
             {
                 Vector2 ptXZ = candidates[i];
 
-                // Keep the very center of the Golden Path clear of random obstacles so the coffin isn't blocked
+                // Keep golden path center clear so coffin and player aren't blocked
                 float distToPath = pathGenerator.QueryClosestPointOnPath(ptXZ, out _, out _, out _);
-                if (distToPath < cfg.goldenPathCenterClearance)
+                if (distToPath < cfg.goldenPathTreeClearance)
                     continue;
 
                 if (!SampleTerrainDataAtWorldXZ(ptXZ, out _, out _, out float slopeDegrees))
                     continue;
 
-                List<SpawnablePrefabEntry> pool;
-                float spawnChance;
-
-                if (slopeDegrees < cfg.lowSlopeMaxDegrees)
-                {
-                    // Slope < 20°: Leaf piles & deadfall logs
-                    pool = cfg.lowSlopePool;
-                    spawnChance = cfg.lowSlopeSpawnChance;
-                }
-                else if (slopeDegrees <= cfg.midSlopeMaxDegrees)
-                {
-                    // Slope 20° - 38°: Birch & Oak trees (abundant)
-                    pool = cfg.midSlopePool;
-                    spawnChance = cfg.midSlopeSpawnChance;
-                }
-                else
-                {
-                    // Slope > 38°: Jagged Boulders & loose scree zones
-                    pool = cfg.highSlopePool;
-                    spawnChance = cfg.highSlopeSpawnChance;
-                }
-
-                if ((float)rng.NextDouble() > spawnChance)
+                // Trees do not grow on extreme rocky cliffs
+                if (slopeDegrees > cfg.maxTreeSlopeDegrees)
                     continue;
 
-                SpawnablePrefabEntry entry = SelectWeightedEntry(pool, rng);
-                if (entry == null || entry.prefab == null)
+                if ((float)rng.NextDouble() > cfg.denseForestSpawnChance)
                     continue;
 
-                if (!occupancyGrid.IsFree(ptXZ, entry.footprintRadius))
+                // Randomly select a tree prefab from the configured multiple tree prefabs
+                SpawnablePrefabEntry treeEntry = SelectWeightedEntry(cfg.treePrefabs, rng);
+                if (treeEntry == null || treeEntry.prefab == null)
                     continue;
 
-                if (TrySpawnEntryAtXZ(entry, ptXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: false))
+                if (!occupancyGrid.IsFree(ptXZ, treeEntry.footprintRadius))
+                    continue;
+
+                if (TrySpawnEntryAtXZ(treeEntry, ptXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: true))
                 {
-                    occupancyGrid.Register(ptXZ, entry.footprintRadius);
+                    occupancyGrid.Register(ptXZ, treeEntry.footprintRadius);
                     spawnedCount++;
                 }
             }
@@ -652,7 +643,84 @@ namespace FirstPersonSystem.ProceduralGeneration
         }
 
         /// <summary>
-        /// Stage 6B: Secondary Poisson Disk Sampling pass for decorative small objects (small rocks, bushes, shrubs).
+        /// Stage 6B: Spawns slope hazards & rocks:
+        /// - Low slopes (< 20°): Leaf piles (low friction) & deadfall logs
+        /// - High slopes (> 38°): Jagged rocks from rockPrefabs and loose scree zones
+        /// </summary>
+        private int SpawnSlopeHazardsAndRocks(
+            MountainGenerationProfile cfg,
+            Transform parent,
+            int stageSeed)
+        {
+            System.Random rng = new System.Random(stageSeed);
+
+            float halfWidth = cfg.playableWidth * 0.5f + cfg.boundaryMargin * 0.2f;
+            float zMin = cfg.pathStartXZ.y - 2f;
+            float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength + 2f;
+
+            Rect sampleBounds = new Rect(-halfWidth, zMin, halfWidth * 2f, zMax - zMin);
+            List<Vector2> candidates = PoissonDiskSampler.GeneratePoints(sampleBounds, 4.5f, rng);
+
+            int spawnedCount = 0;
+
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                Vector2 ptXZ = candidates[i];
+
+                float distToPath = pathGenerator.QueryClosestPointOnPath(ptXZ, out _, out _, out _);
+                if (distToPath < cfg.goldenPathTreeClearance * 0.8f)
+                    continue;
+
+                if (!SampleTerrainDataAtWorldXZ(ptXZ, out _, out _, out float slopeDegrees))
+                    continue;
+
+                SpawnablePrefabEntry entryToSpawn = null;
+                bool isAnchor = false;
+
+                if (slopeDegrees < cfg.lowSlopeMaxDegrees)
+                {
+                    if (HasValidEntry(cfg.lowSlopeHazards) && (float)rng.NextDouble() < cfg.lowSlopeHazardChance)
+                    {
+                        entryToSpawn = SelectWeightedEntry(cfg.lowSlopeHazards, rng);
+                        isAnchor = entryToSpawn != null && entryToSpawn.isAnchorable;
+                    }
+                }
+                else if (slopeDegrees >= cfg.highSlopeMinDegrees)
+                {
+                    if ((float)rng.NextDouble() < cfg.highSlopeHazardChance)
+                    {
+                        bool pickRock = (rng.NextDouble() < 0.65 && HasValidEntry(cfg.rockPrefabs)) || !HasValidEntry(cfg.highSlopeHazards);
+                        if (pickRock && HasValidEntry(cfg.rockPrefabs))
+                        {
+                            entryToSpawn = SelectWeightedEntry(cfg.rockPrefabs, rng);
+                            isAnchor = true;
+                        }
+                        else if (HasValidEntry(cfg.highSlopeHazards))
+                        {
+                            entryToSpawn = SelectWeightedEntry(cfg.highSlopeHazards, rng);
+                            isAnchor = false;
+                        }
+                    }
+                }
+
+                if (entryToSpawn == null || entryToSpawn.prefab == null)
+                    continue;
+
+                if (!occupancyGrid.IsFree(ptXZ, entryToSpawn.footprintRadius))
+                    continue;
+
+                if (TrySpawnEntryAtXZ(entryToSpawn, ptXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: isAnchor))
+                {
+                    occupancyGrid.Register(ptXZ, entryToSpawn.footprintRadius);
+                    spawnedCount++;
+                }
+            }
+
+            return spawnedCount;
+        }
+
+        /// <summary>
+        /// Stage 6C: Secondary Poisson Disk Sampling pass for decorative small objects (small rocks, bushes, shrubs).
         /// </summary>
         private int SpawnDecorativeObjects(
             MountainGenerationProfile cfg,
@@ -664,9 +732,9 @@ namespace FirstPersonSystem.ProceduralGeneration
 
             System.Random rng = new System.Random(stageSeed);
 
-            float halfWidth = cfg.playableWidth * 0.5f + cfg.boundaryMargin * 0.25f;
-            float zMin = cfg.pathStartXZ.y - 5f;
-            float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength + 5f;
+            float halfWidth = cfg.playableWidth * 0.5f;
+            float zMin = cfg.pathStartXZ.y;
+            float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength;
 
             Rect sampleBounds = new Rect(-halfWidth, zMin, halfWidth * 2f, zMax - zMin);
             List<Vector2> candidates = PoissonDiskSampler.GeneratePoints(sampleBounds, cfg.decorativePoissonRadius, rng);
@@ -713,7 +781,6 @@ namespace FirstPersonSystem.ProceduralGeneration
                 if (eligibleRules.Count == 0)
                     continue;
 
-                // Weighted selection among eligible decorative rules
                 float pick = (float)rng.NextDouble() * totalWeight;
                 DecorativeScatterRule chosenRule = eligibleRules[eligibleRules.Count - 1];
                 float accum = 0f;
@@ -741,6 +808,64 @@ namespace FirstPersonSystem.ProceduralGeneration
             return spawnedCount;
         }
 
+        /// <summary>
+        /// Stage 7: Spawns 4 invisible BoxColliders (West, East, South, North)
+        /// enclosing the playable area so the player and coffin cannot leave.
+        /// </summary>
+        private void SpawnInvisibleBoundaryColliders(
+            MountainGenerationProfile cfg,
+            Transform parent)
+        {
+            float halfWidth = cfg.playableWidth * 0.5f;
+            float startZ = cfg.pathStartXZ.y;
+            float summitEndZ = cfg.pathEndXZ.y + cfg.summitSafeLength;
+            float lengthZ = summitEndZ - startZ;
+            float midZ = (startZ + summitEndZ) * 0.5f;
+
+            float wallH = cfg.boundaryWallHeight;
+            float wallT = cfg.boundaryWallThickness;
+            float halfElev = cfg.targetElevationGain * 0.5f;
+
+            // 1. West Wall (Left: X = -halfWidth)
+            CreateBoundaryWall(
+                "Boundary_West_Left",
+                new Vector3(-halfWidth - wallT * 0.5f, halfElev, midZ),
+                new Vector3(wallT, wallH * 2.5f, lengthZ + wallT * 2f),
+                parent);
+
+            // 2. East Wall (Right: X = +halfWidth)
+            CreateBoundaryWall(
+                "Boundary_East_Right",
+                new Vector3(halfWidth + wallT * 0.5f, halfElev, midZ),
+                new Vector3(wallT, wallH * 2.5f, lengthZ + wallT * 2f),
+                parent);
+
+            // 3. South Wall (Start / Back: Z = startZ)
+            CreateBoundaryWall(
+                "Boundary_South_Start",
+                new Vector3(0f, halfElev, startZ - wallT * 0.5f),
+                new Vector3(cfg.playableWidth + wallT * 2f, wallH * 2.5f, wallT),
+                parent);
+
+            // 4. North Wall (Summit / End: Z = summitEndZ)
+            CreateBoundaryWall(
+                "Boundary_North_Summit",
+                new Vector3(0f, cfg.targetElevationGain, summitEndZ + wallT * 0.5f),
+                new Vector3(cfg.playableWidth + wallT * 2f, wallH * 2.5f, wallT),
+                parent);
+        }
+
+        private void CreateBoundaryWall(string wallName, Vector3 center, Vector3 size, Transform parent)
+        {
+            GameObject wallGO = new GameObject(wallName);
+            wallGO.transform.SetParent(parent, false);
+            wallGO.transform.position = center;
+
+            BoxCollider col = wallGO.AddComponent<BoxCollider>();
+            col.size = size;
+            col.isTrigger = false;
+        }
+
         private bool TrySpawnEntryAtXZ(
             SpawnablePrefabEntry entry,
             Vector2 worldXZ,
@@ -757,7 +882,6 @@ namespace FirstPersonSystem.ProceduralGeneration
 
             Vector3 spawnPos = new Vector3(worldXZ.x, worldY + entry.verticalEmbedOffset, worldXZ.y);
 
-            // Compute rotation blending between World Up and Terrain Surface Normal
             Vector3 upAxis = Vector3.Slerp(Vector3.up, normal, Mathf.Clamp01(entry.alignToNormal)).normalized;
             float randomYaw = (float)rng.NextDouble() * 360f;
             Quaternion baseRotation = Quaternion.FromToRotation(Vector3.up, upAxis) * Quaternion.Euler(0f, randomYaw, 0f);
@@ -964,6 +1088,27 @@ namespace FirstPersonSystem.ProceduralGeneration
                     float lenZ = zone.endZ - zone.startZ;
                     Vector3 center = new Vector3(0f, zone.baseElevation + 0.5f, (zone.startZ + zone.endZ) * 0.5f);
                     Gizmos.DrawCube(center, new Vector3(width * 0.7f, 0.5f, lenZ));
+                }
+            }
+
+            if (drawBoundaryGizmos)
+            {
+                MountainGenerationProfile cfg = profile;
+                if (cfg != null && cfg.spawnInvisibleBoundaries)
+                {
+                    Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.35f);
+                    float halfWidth = cfg.playableWidth * 0.5f;
+                    float startZ = cfg.pathStartXZ.y;
+                    float summitEndZ = cfg.pathEndXZ.y + cfg.summitSafeLength;
+                    float lengthZ = summitEndZ - startZ;
+                    float midZ = (startZ + summitEndZ) * 0.5f;
+                    float halfElev = cfg.targetElevationGain * 0.5f;
+                    float wallH = cfg.boundaryWallHeight;
+
+                    // Wire boundary box visualization
+                    Gizmos.DrawWireCube(
+                        new Vector3(0f, halfElev, midZ),
+                        new Vector3(cfg.playableWidth, wallH, lengthZ));
                 }
             }
         }

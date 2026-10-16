@@ -1,0 +1,133 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 165ea86f3ee7d424581eb96512cc5d60, type: 3}
+  m_Name: MountainGenerationProfile
+  m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.ProceduralGeneration.MountainGenerationProfile
+  playableWidth: 120
+  boundaryMargin: 35
+  pathStartXZ: {x: 0, y: 0}
+  pathEndXZ: {x: 0, y: 250}
+  targetElevationGain: 85
+  terrainMaxHeightHeadroom: 60
+  heightmapResolution: 513
+  alphamapResolution: 512
+  startingFlatLength: 24
+  summitSafeLength: 22
+  climbTierCount: 5
+  safeAreaRatioPerTier: 0.28
+  slopeProgressionExponent: 1.45
+  safeZoneSlopeFactor: 0.03
+  goldenPathStepRange: {x: 8, y: 12}
+  pathMomentum: 0.65
+  maxStepTurnDegrees: 28
+  maxHeadingAngleDegrees: 48
+  pathInnerCarveRadius: 3.5
+  pathOuterBlendRadius: 10
+  pathCarveStrength: 0.85
+  pathTrenchDepth: 0.25
+  primaryNoiseScale: 0.018
+  mountainRoughnessAmplitude: 11
+  noiseOctaves: 4
+  enableBoundaryCliffs: 0
+  boundaryCliffHeight: 32
+  spawnInvisibleBoundaries: 1
+  boundaryWallHeight: 45
+  boundaryWallThickness: 3
+  grassTerrainLayer: {fileID: 8574412962073106934, guid: 43f359519ff2ffa47aecc5e8d5db8965, type: 2}
+  rockTerrainLayer: {fileID: 8574412962073106934, guid: 08089bc5bac138a4ba82d17dbd27e356, type: 2}
+  pathTerrainLayer: {fileID: 8574412962073106934, guid: 08089bc5bac138a4ba82d17dbd27e356, type: 2}
+  rockSlopeStartDegrees: 28
+  rockSlopeFullDegrees: 40
+  anchorableLayerName: Anchorable
+  treePrefabs:
+  - label: Oak Tree
+    prefab: {fileID: 7406496363960411261, guid: facd05fda58131c429dd66d8f55c45d3, type: 3}
+    weight: 50
+    scaleRange: {x: 0.85, y: 1.3}
+    alignToNormal: 0.05
+    randomTiltDegrees: 3.5
+    footprintRadius: 1.6
+    verticalEmbedOffset: -0.15
+    isAnchorable: 1
+  - label: Birch Tree
+    prefab: {fileID: 326660030885323538, guid: 5b3c670c720171c43bcb4f1b028a5e28, type: 3}
+    weight: 50
+    scaleRange: {x: 0.85, y: 1.3}
+    alignToNormal: 0.05
+    randomTiltDegrees: 3.5
+    footprintRadius: 1.5
+    verticalEmbedOffset: -0.15
+    isAnchorable: 1
+  rockPrefabs:
+  - label: Boulder
+    prefab: {fileID: 0}
+    weight: 40
+    scaleRange: {x: 0.85, y: 1.35}
+    alignToNormal: 0.65
+    randomTiltDegrees: 12
+    footprintRadius: 2
+    verticalEmbedOffset: -0.25
+    isAnchorable: 1
+  - label: Jagged Rock
+    prefab: {fileID: 0}
+    weight: 30
+    scaleRange: {x: 0.85, y: 1.4}
+    alignToNormal: 0.75
+    randomTiltDegrees: 15
+    footprintRadius: 1.8
+    verticalEmbedOffset: -0.2
+    isAnchorable: 1
+  goldenPathTreeRatio: 0.75
+  anchorsPerPathNode: 1
+  bonusSecondAnchorChance: 0.35
+  anchorLateralOffsetRange: {x: 2.8, y: 6.2}
+  enableDenseForest: 1
+  denseForestPoissonRadius: 3.6
+  denseForestSpawnChance: 0.88
+  maxTreeSlopeDegrees: 38
+  goldenPathTreeClearance: 2.6
+  lowSlopeMaxDegrees: 20
+  highSlopeMinDegrees: 38
+  lowSlopeHazardChance: 0.45
+  lowSlopeHazards:
+  - label: Leaf Pile (Low Friction Trigger)
+    prefab: {fileID: 0}
+    weight: 50
+    scaleRange: {x: 0.9, y: 1.3}
+    alignToNormal: 0.95
+    randomTiltDegrees: 2
+    footprintRadius: 1.6
+    verticalEmbedOffset: -0.02
+    isAnchorable: 0
+  - label: Deadfall Log
+    prefab: {fileID: 0}
+    weight: 35
+    scaleRange: {x: 0.85, y: 1.25}
+    alignToNormal: 0.85
+    randomTiltDegrees: 5
+    footprintRadius: 1.8
+    verticalEmbedOffset: -0.1
+    isAnchorable: 1
+  highSlopeHazardChance: 0.65
+  highSlopeHazards:
+  - label: Loose Scree Zone (Rollback Hazard)
+    prefab: {fileID: 0}
+    weight: 40
+    scaleRange: {x: 0.9, y: 1.25}
+    alignToNormal: 0.95
+    randomTiltDegrees: 3
+    footprintRadius: 2.5
+    verticalEmbedOffset: -0.05
+    isAnchorable: 0
+  decorativePoissonRadius: 2.8
+  decorativeSpawnChance: 0.65
+  decorativeRules: []

@@ -615,14 +615,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 1505566843, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      propertyPath: m_ClearFlags
-      value: 4
-      objectReference: {fileID: 0}
-    - target: {fileID: 1947446468, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      propertyPath: pickupLayer.m_Bits
-      value: 1
-      objectReference: {fileID: 0}
     - target: {fileID: 1656717197965110957, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
       propertyPath: m_Name
       value: FirstPersonController
@@ -667,31 +659,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 1656717197965110959, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      propertyPath: groundMask.m_Bits
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 1656717199400178229, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      propertyPath: m_CullingMask.m_Bits
-      value: 2039
-      objectReference: {fileID: 0}
-    - target: {fileID: 2662980902453451194, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      propertyPath: interactionLayers.m_Bits
-      value: 769
-      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 1656717197965110957, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 2061146637}
-    - targetCorrespondingSourceObject: {fileID: 1656717197965110957, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 2061146636}
-    - targetCorrespondingSourceObject: {fileID: 1656717197965110957, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 2061146635}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
 --- !u!1001 &897717098
 PrefabInstance:
@@ -1499,70 +1470,6 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 9.999999, y: 2.2204459e-16, z: 9.999999}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!1 &2061146622 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 1656717197965110957, guid: 99c1d2c595e3e524cb891aa967887ae0, type: 3}
-  m_PrefabInstance: {fileID: 888820881}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &2061146635
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2061146622}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e7ade0432bc7c8f42a0acdfbb36b6003, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.WinchHUD
-  showHUD: 1
---- !u!114 &2061146636
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2061146622}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6e508185f9e24314786ce6c91d04dabc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.WinchEnergySystem
-  maxEnergy: 100
-  currentEnergy: 100
-  baseMotorDrain: 4
-  forceWorkMultiplier: 0.006
-  canRecharge: 1
-  rechargeDelay: 1.5
-  rechargeRate: 8
---- !u!114 &2061146637
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2061146622}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8b4e782ddd7491a4ebd214ac8ea12230, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.WinchSystem
-  anchorableLayer:
-    serializedVersion: 2
-    m_Bits: 512
-  groundCollisionLayers:
-    serializedVersion: 2
-    m_Bits: 1
-  maxRopeLength: 30
-  minRopeLength: 1
-  reelSpeed: 1.5
-  maxPullForce: 2500
-  brakeStiffness: 3000
-  ropeWidth: 0.04
-  ropeMaterial: {fileID: 0}
-  anchorPrefab: {fileID: 0}
-  ropeHandHolder: {fileID: 0}
 --- !u!1 &2076353270
 GameObject:
   m_ObjectHideFlags: 0

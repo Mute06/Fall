@@ -7,7 +7,7 @@ namespace FirstPersonSystem.ProceduralGeneration
     [Serializable]
     public class SpawnablePrefabEntry
     {
-        [Tooltip("Descriptive label (e.g., 'Sturdy Oak', 'Jagged Boulder', 'Leaf Pile').")]
+        [Tooltip("Descriptive label (e.g., 'Oak Tree', 'Birch Tree', 'Crag Boulder', 'Leaf Pile').")]
         public string label = "Spawn Entry";
 
         [Tooltip("Prefab to instantiate. Can be any asset.")]
@@ -36,7 +36,7 @@ namespace FirstPersonSystem.ProceduralGeneration
         public float verticalEmbedOffset = -0.15f;
 
         [Tooltip("If true, automatically assigns this object and its children with colliders to the Anchorable layer for the WinchSystem.")]
-        public bool isAnchorable = false;
+        public bool isAnchorable = true;
     }
 
     [Serializable]
@@ -74,7 +74,7 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Min(40f)]
         public float playableWidth = 120f;
 
-        [Tooltip("Extra border width on left/right/back/front for steep valley cliff walls.")]
+        [Tooltip("Extra border terrain margin on left/right/back/front beyond playable boundaries.")]
         [Min(15f)]
         public float boundaryMargin = 35f;
 
@@ -86,9 +86,9 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Min(10f)]
         public float targetElevationGain = 85f;
 
-        [Tooltip("Extra height above summit + cliffs allocated in TerrainData.size.y.")]
+        [Tooltip("Extra height allocated in TerrainData.size.y.")]
         [Min(20f)]
-        public float terrainMaxHeightHeadroom = 60f;
+        public float terrainMaxHeightHeadroom = 50f;
 
         [Tooltip("Heightmap resolution (must be power of 2 plus 1, e.g., 257, 513, 1025).")]
         public int heightmapResolution = 513;
@@ -149,11 +149,11 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Range(0f, 1f)]
         public float pathCarveStrength = 0.85f;
 
-        [Tooltip(" slight trench depth (meters) in the center of the path to help cradle the coffin.")]
+        [Tooltip("Slight trench depth (meters) in the center of the path to help cradle the coffin.")]
         [Range(0f, 1.5f)]
         public float pathTrenchDepth = 0.25f;
 
-        [Header("4. Mountain Noise & Bounded Valley Cliffs")]
+        [Header("4. Mountain Noise & Natural Edges")]
         [Tooltip("Primary low-frequency mountain ridge noise scale.")]
         [Min(0.001f)]
         public float primaryNoiseScale = 0.018f;
@@ -166,15 +166,25 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Range(1, 6)]
         public int noiseOctaves = 4;
 
-        [Tooltip("Height (meters) of the steep bounding valley cliff walls around the map edges.")]
-        [Min(10f)]
+        [Tooltip("Keep edges normal and natural (false) or raise artificial boundary cliffs (true).")]
+        public bool enableBoundaryCliffs = false;
+
+        [Tooltip("Height of boundary cliffs if enabled.")]
         public float boundaryCliffHeight = 32f;
 
-        [Tooltip("Exponent controlling how sharply the boundary cliffs rise at the playable edges.")]
-        [Range(1.2f, 4f)]
-        public float boundaryCliffSharpness = 2.0f;
+        [Header("5. Invisible Boundary Colliders")]
+        [Tooltip("Automatically spawns 4 invisible BoxColliders at North, South, East, and West boundaries of the playable area.")]
+        public bool spawnInvisibleBoundaries = true;
 
-        [Header("5. Terrain Ground Textures (Grass Default)")]
+        [Tooltip("Height (meters) of the invisible boundary walls.")]
+        [Min(10f)]
+        public float boundaryWallHeight = 45f;
+
+        [Tooltip("Thickness (meters) of the invisible boundary walls.")]
+        [Min(0.5f)]
+        public float boundaryWallThickness = 3f;
+
+        [Header("6. Terrain Ground Textures (Grass Default)")]
         [Tooltip("Primary ground TerrainLayer (Grass). Used across walkable terrain.")]
         public TerrainLayer grassTerrainLayer;
 
@@ -192,9 +202,68 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Range(25f, 65f)]
         public float rockSlopeFullDegrees = 40f;
 
-        [Header("6. Guaranteed-Solvable Golden Path Anchors")]
+        [Header("7. Core Asset Pools: Trees & Rocks")]
         [Tooltip("Layer name assigned to anchorable objects (trees/boulders) so WinchSystem can hook them.")]
         public string anchorableLayerName = "Anchorable";
+
+        [Tooltip("Pool of multiple tree prefabs (Oak, Birch, Pine, etc.). Golden Path anchors and the Dense Forest randomly pick from this list.")]
+        public List<SpawnablePrefabEntry> treePrefabs = new List<SpawnablePrefabEntry>
+        {
+            new SpawnablePrefabEntry
+            {
+                label = "Oak Tree",
+                weight = 50f,
+                scaleRange = new Vector2(0.85f, 1.3f),
+                alignToNormal = 0.05f,
+                randomTiltDegrees = 3.5f,
+                footprintRadius = 1.6f,
+                verticalEmbedOffset = -0.15f,
+                isAnchorable = true
+            },
+            new SpawnablePrefabEntry
+            {
+                label = "Birch Tree",
+                weight = 50f,
+                scaleRange = new Vector2(0.85f, 1.3f),
+                alignToNormal = 0.05f,
+                randomTiltDegrees = 3.5f,
+                footprintRadius = 1.5f,
+                verticalEmbedOffset = -0.15f,
+                isAnchorable = true
+            }
+        };
+
+        [Tooltip("Pool of multiple rock and boulder prefabs. Used for Golden Path anchors and slope boulders.")]
+        public List<SpawnablePrefabEntry> rockPrefabs = new List<SpawnablePrefabEntry>
+        {
+            new SpawnablePrefabEntry
+            {
+                label = "Boulder",
+                weight = 40f,
+                scaleRange = new Vector2(0.85f, 1.35f),
+                alignToNormal = 0.65f,
+                randomTiltDegrees = 12f,
+                footprintRadius = 2.0f,
+                verticalEmbedOffset = -0.25f,
+                isAnchorable = true
+            },
+            new SpawnablePrefabEntry
+            {
+                label = "Jagged Rock",
+                weight = 30f,
+                scaleRange = new Vector2(0.85f, 1.4f),
+                alignToNormal = 0.75f,
+                randomTiltDegrees = 15f,
+                footprintRadius = 1.8f,
+                verticalEmbedOffset = -0.2f,
+                isAnchorable = true
+            }
+        };
+
+        [Header("8. Golden Path Guaranteed Anchors")]
+        [Tooltip("Probability [0..1] that an anchor along the Golden Path picks from treePrefabs rather than rockPrefabs (e.g. 0.75 = 75% Tree, 25% Rock).")]
+        [Range(0f, 1f)]
+        public float goldenPathTreeRatio = 0.75f;
 
         [Tooltip("Number of guaranteed anchors spawned per Golden Path node (8-12m apart).")]
         [Range(1, 3)]
@@ -204,64 +273,49 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Range(0f, 1f)]
         public float bonusSecondAnchorChance = 0.35f;
 
-        [Tooltip("Lateral distance range (meters) from the Golden Path center to place guaranteed anchors (keeps center clear for coffin while staying well within 30m rope reach).")]
+        [Tooltip("Lateral distance range (meters) from Golden Path center to place anchors (keeps center clear for coffin).")]
         public Vector2 anchorLateralOffsetRange = new Vector2(2.8f, 6.2f);
 
-        [Tooltip("Weighted pool of sturdy anchors for the Golden Path (e.g., Oak weight = 75, Boulder weight = 25 so trees are more abundant).")]
-        public List<SpawnablePrefabEntry> goldenPathAnchors = new List<SpawnablePrefabEntry>
-        {
-            new SpawnablePrefabEntry
-            {
-                label = "Sturdy Oak Tree (Golden Path Anchor)",
-                weight = 75f,
-                scaleRange = new Vector2(0.9f, 1.25f),
-                alignToNormal = 0.05f,
-                randomTiltDegrees = 3f,
-                footprintRadius = 1.8f,
-                verticalEmbedOffset = -0.15f,
-                isAnchorable = true
-            },
-            new SpawnablePrefabEntry
-            {
-                label = "Sturdy Boulder (Golden Path Anchor)",
-                weight = 25f,
-                scaleRange = new Vector2(0.85f, 1.3f),
-                alignToNormal = 0.65f,
-                randomTiltDegrees = 12f,
-                footprintRadius = 2.0f,
-                verticalEmbedOffset = -0.25f,
-                isAnchorable = true
-            }
-        };
+        [Header("9. Dense Forest of Trees")]
+        [Tooltip("Enable spawning a dense forest covering the mountain terrain.")]
+        public bool enableDenseForest = true;
 
-        [Header("7. Poisson Disk Sampling — Slope Band Rules")]
-        [Tooltip("Minimum Poisson Disk sampling distance (meters) between primary slope objects.")]
-        [Range(2.5f, 15f)]
-        public float primaryPoissonRadius = 5.2f;
+        [Tooltip("Poisson Disk sampling radius (meters) between trees in the dense forest. Lower = denser forest.")]
+        [Range(2.0f, 8.0f)]
+        public float denseForestPoissonRadius = 3.6f;
 
-        [Tooltip("Clearance radius (meters) around the center of the Golden Path where random Poisson trees/boulders won't block the trail.")]
-        [Range(0f, 6f)]
-        public float goldenPathCenterClearance = 2.4f;
+        [Tooltip("Overall spawn probability [0..1] for candidate tree locations.")]
+        [Range(0.2f, 1.0f)]
+        public float denseForestSpawnChance = 0.88f;
 
-        [Tooltip("Low slope upper threshold in degrees (Default: 20 degrees).")]
-        [Range(5f, 30f)]
+        [Tooltip("Maximum terrain slope angle (degrees) where trees can grow. Cliffs steeper than this will remain rocky without trees.")]
+        [Range(20f, 60f)]
+        public float maxTreeSlopeDegrees = 38f;
+
+        [Tooltip("Minimum clearance distance (meters) from the center of the Golden Path so dense trees do not obstruct the trail.")]
+        [Range(1.5f, 6.0f)]
+        public float goldenPathTreeClearance = 2.6f;
+
+        [Header("10. Slope Hazards & Props")]
+        [Tooltip("Slope angle threshold (degrees) below which low-slope hazards (leaf piles, deadfall logs) spawn.")]
+        [Range(10f, 30f)]
         public float lowSlopeMaxDegrees = 20f;
 
-        [Tooltip("Mid slope upper threshold in degrees (Default: 38 degrees).")]
-        [Range(25f, 55f)]
-        public float midSlopeMaxDegrees = 38f;
+        [Tooltip("Slope angle threshold (degrees) above which high-slope rocks & scree zones spawn.")]
+        [Range(25f, 50f)]
+        public float highSlopeMinDegrees = 38f;
 
-        [Tooltip("Overall spawn probability [0..1] for candidate points in Slope < 20° (Leaf piles, deadfall logs, occasional flat-ground trees).")]
+        [Tooltip("Probability of spawning low slope hazards (leaf piles / deadfall logs) on flat/gentle areas.")]
         [Range(0f, 1f)]
-        public float lowSlopeSpawnChance = 0.55f;
+        public float lowSlopeHazardChance = 0.45f;
 
-        [Tooltip("Slope < 20° pool: Leaf piles (low friction triggers), deadfall logs, and optional trees.")]
-        public List<SpawnablePrefabEntry> lowSlopePool = new List<SpawnablePrefabEntry>
+        [Tooltip("Prefabs for low-slope hazards (Leaf Piles, Deadfall Logs).")]
+        public List<SpawnablePrefabEntry> lowSlopeHazards = new List<SpawnablePrefabEntry>
         {
             new SpawnablePrefabEntry
             {
                 label = "Leaf Pile (Low Friction Trigger)",
-                weight = 45f,
+                weight = 50f,
                 scaleRange = new Vector2(0.9f, 1.3f),
                 alignToNormal = 0.95f,
                 randomTiltDegrees = 2f,
@@ -279,83 +333,19 @@ namespace FirstPersonSystem.ProceduralGeneration
                 footprintRadius = 1.8f,
                 verticalEmbedOffset = -0.1f,
                 isAnchorable = true
-            },
-            new SpawnablePrefabEntry
-            {
-                label = "Lowland Oak / Birch Tree",
-                weight = 50f,
-                scaleRange = new Vector2(0.85f, 1.2f),
-                alignToNormal = 0.05f,
-                randomTiltDegrees = 3f,
-                footprintRadius = 1.6f,
-                verticalEmbedOffset = -0.15f,
-                isAnchorable = true
             }
         };
 
-        [Tooltip("Overall spawn probability [0..1] for candidate points in Slope 20° - 38° (High abundance of Birch and Oak trees).")]
+        [Tooltip("Probability of spawning jagged rocks and loose scree zones on steep slopes (> highSlopeMinDegrees).")]
         [Range(0f, 1f)]
-        public float midSlopeSpawnChance = 0.85f;
+        public float highSlopeHazardChance = 0.65f;
 
-        [Tooltip("Slope 20° - 38° pool: Birch and Oak trees (abundant) plus occasional mid-slope boulders.")]
-        public List<SpawnablePrefabEntry> midSlopePool = new List<SpawnablePrefabEntry>
+        [Tooltip("Prefabs for steep slope hazards (e.g. Loose Scree Zones). Note: steep slopes also spawn rocks from rockPrefabs.")]
+        public List<SpawnablePrefabEntry> highSlopeHazards = new List<SpawnablePrefabEntry>
         {
             new SpawnablePrefabEntry
             {
-                label = "Oak Tree",
-                weight = 55f,
-                scaleRange = new Vector2(0.85f, 1.3f),
-                alignToNormal = 0.06f,
-                randomTiltDegrees = 4f,
-                footprintRadius = 1.7f,
-                verticalEmbedOffset = -0.18f,
-                isAnchorable = true
-            },
-            new SpawnablePrefabEntry
-            {
-                label = "Birch Tree",
-                weight = 55f,
-                scaleRange = new Vector2(0.85f, 1.3f),
-                alignToNormal = 0.06f,
-                randomTiltDegrees = 4f,
-                footprintRadius = 1.5f,
-                verticalEmbedOffset = -0.18f,
-                isAnchorable = true
-            },
-            new SpawnablePrefabEntry
-            {
-                label = "Slope Boulder",
-                weight = 15f,
-                scaleRange = new Vector2(0.8f, 1.25f),
-                alignToNormal = 0.6f,
-                randomTiltDegrees = 10f,
-                footprintRadius = 2.0f,
-                verticalEmbedOffset = -0.25f,
-                isAnchorable = true
-            }
-        };
-
-        [Tooltip("Overall spawn probability [0..1] for candidate points in Slope > 38° (Jagged Boulders and Loose Scree Zones).")]
-        [Range(0f, 1f)]
-        public float highSlopeSpawnChance = 0.75f;
-
-        [Tooltip("Slope > 38° pool: Jagged Boulders and loose scree zones (high rollback hazard).")]
-        public List<SpawnablePrefabEntry> highSlopePool = new List<SpawnablePrefabEntry>
-        {
-            new SpawnablePrefabEntry
-            {
-                label = "Jagged Boulder",
-                weight = 60f,
-                scaleRange = new Vector2(0.9f, 1.45f),
-                alignToNormal = 0.75f,
-                randomTiltDegrees = 15f,
-                footprintRadius = 2.2f,
-                verticalEmbedOffset = -0.35f,
-                isAnchorable = true
-            },
-            new SpawnablePrefabEntry
-            {
-                label = "Loose Scree Zone (High Rollback Hazard)",
+                label = "Loose Scree Zone (Rollback Hazard)",
                 weight = 40f,
                 scaleRange = new Vector2(0.9f, 1.25f),
                 alignToNormal = 0.95f,
@@ -366,9 +356,9 @@ namespace FirstPersonSystem.ProceduralGeneration
             }
         };
 
-        [Header("8. Decorative Small Objects (Small Rocks, Bushes, Ground Detail)")]
+        [Header("11. Decorative Small Objects (Small Rocks, Bushes, Ground Detail)")]
         [Tooltip("Poisson Disk sampling radius (meters) for small decorative objects.")]
-        [Range(1.0f, 10f)]
+        [Range(1.0f, 8f)]
         public float decorativePoissonRadius = 2.8f;
 
         [Tooltip("Overall probability [0..1] that a decorative sample point spawns a prop.")]
