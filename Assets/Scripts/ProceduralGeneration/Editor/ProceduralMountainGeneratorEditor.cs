@@ -27,6 +27,22 @@ namespace FirstPersonSystem.ProceduralGeneration.Editor
                     CreateAndAssignProfile(generator);
                 }
             }
+            else
+            {
+                EditorGUILayout.Space(6f);
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.LabelField($"Active Profile: {generator.Profile.name}", EditorStyles.boldLabel);
+                int matCount = generator.Profile.treeMaterials != null ? generator.Profile.treeMaterials.Count : 0;
+                string dist = generator.Profile.randomizeTreeMaterials ? generator.Profile.treeMaterialDistribution.ToString() : "Disabled";
+                EditorGUILayout.LabelField($"Tree Materials Pool: {matCount} material(s) | Distribution: {dist}", EditorStyles.miniLabel);
+
+                if (GUILayout.Button("Select Profile in Project Window", GUILayout.Height(22f)))
+                {
+                    Selection.activeObject = generator.Profile;
+                    EditorGUIUtility.PingObject(generator.Profile);
+                }
+                EditorGUILayout.EndVertical();
+            }
 
             EditorGUILayout.BeginHorizontal();
             GUI.backgroundColor = new Color(0.35f, 0.85f, 0.45f);

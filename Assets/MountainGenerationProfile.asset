@@ -51,6 +51,15 @@ MonoBehaviour:
   rockSlopeStartDegrees: 38
   rockSlopeFullDegrees: 50
   anchorableLayerName: Anchorable
+  randomizeTreeMaterials: 1
+  treeMaterialDistribution: 0
+  treeMaterials:
+  - {fileID: 2100000, guid: 8a58f03f6a81d0849b072050b104aef6, type: 2}
+  - {fileID: 2100000, guid: fbb25eb3b218c4d42b73ef325b66ed9a, type: 2}
+  - {fileID: 2100000, guid: fe144fab0302d9a4483acaf425b51b0e, type: 2}
+  - {fileID: 2100000, guid: fd03984648714d84cba34909a6c8dca5, type: 2}
+  treeMaterialWeights: []
+  treeMaterialClusterScale: 0.025
   treePrefabs:
   - label: Oak Tree
     prefab: {fileID: 7406496363960411261, guid: facd05fda58131c429dd66d8f55c45d3, type: 3}
@@ -61,6 +70,8 @@ MonoBehaviour:
     footprintRadius: 1.6
     verticalEmbedOffset: -0.15
     isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
   - label: Birch Tree
     prefab: {fileID: 326660030885323538, guid: 5b3c670c720171c43bcb4f1b028a5e28, type: 3}
     weight: 50
@@ -70,6 +81,8 @@ MonoBehaviour:
     footprintRadius: 1.5
     verticalEmbedOffset: -0.15
     isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
   rockPrefabs:
   - label: Boulder
     prefab: {fileID: 0}

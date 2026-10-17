@@ -37,6 +37,25 @@ namespace FirstPersonSystem.ProceduralGeneration
 
         [Tooltip("If true, automatically assigns this object and its children with colliders to the Anchorable layer for the WinchSystem.")]
         public bool isAnchorable = true;
+
+        [Header("Material Customization")]
+        [Tooltip("Optional list of materials specific to this prefab entry. If assigned, instances randomly pick from this list instead of the profile's global pool.")]
+        public List<Material> materialOverrides = new List<Material>();
+
+        [Tooltip("Target material slot index (-1 replaces all material slots on the renderer, 0 replaces only first slot, etc.).")]
+        public int targetMaterialSlot = -1;
+    }
+
+    public enum TreeMaterialDistribution
+    {
+        [Tooltip("Uniform or weighted random selection.")]
+        Random = 0,
+
+        [Tooltip("Transition from first to last material as elevation increases from mountain base to summit.")]
+        ElevationGradient = 1,
+
+        [Tooltip("Group trees into natural organic patches/groves of the same material using Perlin noise.")]
+        NoiseClustered = 2
     }
 
     [Serializable]
@@ -205,6 +224,23 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Header("7. Core Asset Pools: Trees & Rocks")]
         [Tooltip("Layer name assigned to anchorable objects (trees/boulders) so WinchSystem can hook them.")]
         public string anchorableLayerName = "Anchorable";
+
+        [Header("Tree Material Randomization")]
+        [Tooltip("If enabled, trees (anchors & forest) will be randomly assigned a material from treeMaterials (or entry.materialOverrides).")]
+        public bool randomizeTreeMaterials = true;
+
+        [Tooltip("Distribution strategy: Random, ElevationGradient (mountain base to summit), or NoiseClustered (organic groves).")]
+        public TreeMaterialDistribution treeMaterialDistribution = TreeMaterialDistribution.Random;
+
+        [Tooltip("Global list of materials to randomly assign to trees.")]
+        public List<Material> treeMaterials = new List<Material>();
+
+        [Tooltip("Optional relative weights for treeMaterials when using Random distribution. If empty or count mismatch, equal weighting is used.")]
+        public List<float> treeMaterialWeights = new List<float>();
+
+        [Tooltip("Noise frequency for NoiseClustered mode. Smaller = larger groves, larger = smaller scattered patches.")]
+        [Range(0.005f, 0.1f)]
+        public float treeMaterialClusterScale = 0.025f;
 
         [Tooltip("Pool of multiple tree prefabs (Oak, Birch, Pine, etc.). Golden Path anchors and the Dense Forest randomly pick from this list.")]
         public List<SpawnablePrefabEntry> treePrefabs = new List<SpawnablePrefabEntry>

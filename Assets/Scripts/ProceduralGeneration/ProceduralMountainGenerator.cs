@@ -570,7 +570,7 @@ namespace FirstPersonSystem.ProceduralGeneration
                     if (!occupancyGrid.IsFree(spawnXZ, chosenEntry.footprintRadius * 0.8f))
                         continue;
 
-                    if (TrySpawnEntryAtXZ(chosenEntry, spawnXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: true))
+                    if (TrySpawnEntryAtXZ(chosenEntry, spawnXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: true, isTree: pickTree))
                     {
                         occupancyGrid.Register(spawnXZ, chosenEntry.footprintRadius);
                         spawnedCount++;
@@ -632,7 +632,7 @@ namespace FirstPersonSystem.ProceduralGeneration
                 if (!occupancyGrid.IsFree(ptXZ, treeEntry.footprintRadius))
                     continue;
 
-                if (TrySpawnEntryAtXZ(treeEntry, ptXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: true))
+                if (TrySpawnEntryAtXZ(treeEntry, ptXZ, parent, rng, cfg.anchorableLayerName, forceAnchorable: true, isTree: true))
                 {
                     occupancyGrid.Register(ptXZ, treeEntry.footprintRadius);
                     spawnedCount++;
@@ -872,7 +872,8 @@ namespace FirstPersonSystem.ProceduralGeneration
             Transform parent,
             System.Random rng,
             string anchorableLayerName,
-            bool forceAnchorable)
+            bool forceAnchorable,
+            bool isTree = false)
         {
             if (entry == null || entry.prefab == null)
                 return false;
@@ -910,7 +911,152 @@ namespace FirstPersonSystem.ProceduralGeneration
                 }
             }
 
+            // Random material assignment
+            MountainGenerationProfile activeProfile = GetOrCreateActiveProfile();
+            Material chosenMaterial = SelectMaterialForObject(entry, isTree, worldXZ, worldY, activeProfile, rng);
+            if (chosenMaterial != null)
+            {
+                ApplyMaterialToInstance(instance, chosenMaterial, entry.targetMaterialSlot);
+            }
+
             return true;
+        }
+
+        private Material SelectMaterialForObject(
+            SpawnablePrefabEntry entry,
+            bool isTree,
+            Vector2 worldXZ,
+            float worldY,
+            MountainGenerationProfile cfg,
+            System.Random rng)
+        {
+            if (entry != null && entry.materialOverrides != null && entry.materialOverrides.Count > 0)
+            {
+                return PickMaterialFromList(entry.materialOverrides, null, rng);
+            }
+
+            if (isTree && cfg != null && cfg.randomizeTreeMaterials && cfg.treeMaterials != null && cfg.treeMaterials.Count > 0)
+            {
+                switch (cfg.treeMaterialDistribution)
+                {
+                    case TreeMaterialDistribution.ElevationGradient:
+                        return PickMaterialByElevation(cfg.treeMaterials, worldY, cfg, rng);
+
+                    case TreeMaterialDistribution.NoiseClustered:
+                        return PickMaterialByNoise(cfg.treeMaterials, worldXZ, cfg, rng);
+
+                    case TreeMaterialDistribution.Random:
+                    default:
+                        return PickMaterialFromList(cfg.treeMaterials, cfg.treeMaterialWeights, rng);
+                }
+            }
+
+            return null;
+        }
+
+        private Material PickMaterialFromList(List<Material> list, List<float> weights, System.Random rng)
+        {
+            if (list == null || list.Count == 0) return null;
+
+            if (weights != null && weights.Count == list.Count)
+            {
+                float totalWeight = 0f;
+                for (int i = 0; i < weights.Count; i++)
+                {
+                    if (list[i] != null && weights[i] > 0f) totalWeight += weights[i];
+                }
+
+                if (totalWeight > 0.0001f)
+                {
+                    float pick = (float)rng.NextDouble() * totalWeight;
+                    float accum = 0f;
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (list[i] == null || weights[i] <= 0f) continue;
+                        accum += weights[i];
+                        if (pick <= accum) return list[i];
+                    }
+                }
+            }
+
+            int validCount = 0;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null) validCount++;
+            }
+            if (validCount == 0) return null;
+
+            int pickIdx = rng.Next(validCount);
+            int current = 0;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null)
+                {
+                    if (current == pickIdx) return list[i];
+                    current++;
+                }
+            }
+
+            return list[0];
+        }
+
+        private Material PickMaterialByElevation(List<Material> list, float worldY, MountainGenerationProfile cfg, System.Random rng)
+        {
+            if (list == null || list.Count == 0) return null;
+
+            float minElev = 0f;
+            float maxElev = cfg.targetElevationGain;
+            float normElev = Mathf.Clamp01((worldY - minElev) / Mathf.Max(1f, maxElev - minElev));
+
+            // Organic jitter along contour lines
+            float jitter = ((float)rng.NextDouble() * 2f - 1f) * 0.08f;
+            float t = Mathf.Clamp01(normElev + jitter);
+
+            int idx = Mathf.Clamp(Mathf.FloorToInt(t * list.Count), 0, list.Count - 1);
+            return list[idx];
+        }
+
+        private Material PickMaterialByNoise(List<Material> list, Vector2 worldXZ, MountainGenerationProfile cfg, System.Random rng)
+        {
+            if (list == null || list.Count == 0) return null;
+
+            float scale = Mathf.Max(0.001f, cfg.treeMaterialClusterScale);
+            float noiseVal = Mathf.PerlinNoise(worldXZ.x * scale + (seed * 0.17f), worldXZ.y * scale + (seed * 0.23f));
+
+            float jitter = ((float)rng.NextDouble() * 2f - 1f) * 0.06f;
+            float t = Mathf.Clamp01(noiseVal + jitter);
+
+            int idx = Mathf.Clamp(Mathf.FloorToInt(t * list.Count), 0, list.Count - 1);
+            return list[idx];
+        }
+
+        private void ApplyMaterialToInstance(GameObject instance, Material material, int targetSlot)
+        {
+            if (instance == null || material == null) return;
+
+            Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer rend = renderers[i];
+                if (rend == null || !rend.enabled) continue;
+
+                Material[] sharedMats = rend.sharedMaterials;
+                if (sharedMats == null || sharedMats.Length == 0) continue;
+
+                if (targetSlot < 0 || targetSlot >= sharedMats.Length)
+                {
+                    for (int m = 0; m < sharedMats.Length; m++)
+                    {
+                        sharedMats[m] = material;
+                    }
+                }
+                else
+                {
+                    sharedMats[targetSlot] = material;
+                }
+
+                rend.sharedMaterials = sharedMats;
+            }
         }
 
         private void SetLayerRecursively(Transform root, int layer)

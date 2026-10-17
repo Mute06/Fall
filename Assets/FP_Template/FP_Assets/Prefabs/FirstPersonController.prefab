@@ -661,7 +661,7 @@ MonoBehaviour:
   maxPullForce: 2500
   brakeStiffness: 3000
   ropeWidth: 0.04
-  ropeMaterial: {fileID: 0}
+  ropeMaterial: {fileID: 2100000, guid: 3d13c9578f45ecc48a84b67733f9af9e, type: 2}
   anchorPrefab: {fileID: 0}
   ropeHandHolder: {fileID: 0}
 --- !u!114 &395367094633235548
@@ -794,6 +794,7 @@ GameObject:
   - component: {fileID: 1656717199400178229}
   - component: {fileID: 1656717199400178235}
   - component: {fileID: 1656717199400178231}
+  - component: {fileID: 374099226914913189}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -854,7 +855,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 0
-  orthographic size: 5
+  orthographic size: 8.79
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -903,7 +904,7 @@ MonoBehaviour:
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
   m_RenderPostProcessing: 1
-  m_Antialiasing: 1
+  m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 1
   m_Dithering: 0
@@ -923,6 +924,33 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!114 &374099226914913189
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1656717199400178232}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 673db127ebcbeb1469f3f1386b9de813, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ProPixelizer::ProPixelizer.ProPixelizerCamera
+  SubCamera: {fileID: 0}
+  SubcameraExcludedLayers:
+    serializedVersion: 2
+    m_Bits: 34
+  FixedTargetResolution: 320
+  ClampCameraOrthoSize: 0
+  Mode: 0
+  PixelSize: 0.08
+  overrideUsePixelExpansion: 0
+  UsePixelExpansion: 1
+  PixelizationFilter: 1
+  UsePixelArtUpscalingFilter: 1
+  TargetScale: 1
+  FullscreenColorGradingLUT: {fileID: 0}
+  EnableProPixelizer: 1
 --- !u!1 &6253429248328330251
 GameObject:
   m_ObjectHideFlags: 0
