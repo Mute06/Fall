@@ -1,25 +1,86 @@
+using System;
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 
 namespace FirstPersonSystem
 {
     /// <summary>
-    /// Minimalist IMGUI HUD for the winch and tethering system.
-    /// Presents contextual action keycaps, winch cable telemetry, and battery gauge
-    /// using cached 9-slice textures and high-contrast typography.
+    /// Modern uGUI HUD for the winch and tethering system.
+    /// Uses UI sprite textures (9-sliced panels, keycaps, status pills, gauge tracks, and icons),
+    /// positioned above subtitles (bottomOffset = 210f) and fully responsive to player actions.
     /// </summary>
     public class WinchHUD : MonoBehaviour
     {
-        [Header("Display Settings")]
+        [Header("UI Canvas References")]
+        [Tooltip("Root Canvas. If null, automatically locates the scene Canvas.")]
+        [SerializeField] private Canvas targetCanvas;
+
+        [Tooltip("Root CanvasGroup controlling winch HUD alpha fading.")]
+        [SerializeField] private CanvasGroup rootCanvasGroup;
+
+        [Header("UI Sprites (from Assets/Textures/UI/)")]
+        [SerializeField] private Sprite panelBgSprite;
+        [SerializeField] private Sprite keycapSprite;
+        [SerializeField] private Sprite statusPillSprite;
+        [SerializeField] private Sprite gaugeTrackSprite;
+        [SerializeField] private Sprite gaugeFillSprite;
+        [SerializeField] private Sprite iconAnchorSprite;
+        [SerializeField] private Sprite iconBatterySprite;
+        [SerializeField] private Sprite iconWarningSprite;
+
+        [Header("State Containers")]
+        [SerializeField] private GameObject idleContainer;
+        [SerializeField] private GameObject carryingRopeContainer;
+        [SerializeField] private GameObject winchRiggedContainer;
+
+        [Header("Idle Elements")]
+        [SerializeField] private TextMeshProUGUI idleKeycapText;
+        [SerializeField] private TextMeshProUGUI idleActionText;
+
+        [Header("Carrying Rope Elements")]
+        [SerializeField] private Image carryingStatusPill;
+        [SerializeField] private TextMeshProUGUI carryingStatusText;
+        [SerializeField] private Image cableFillBar;
+        [SerializeField] private TextMeshProUGUI cableLengthText;
+        [SerializeField] private TextMeshProUGUI carryingLmbActionText;
+
+        [Header("Winch Rigged Elements")]
+        [SerializeField] private Image motorStatusPill;
+        [SerializeField] private TextMeshProUGUI motorStatusBadgeText;
+        [SerializeField] private Image motorStatusDot;
+        [SerializeField] private Image batteryFillBar;
+        [SerializeField] private TextMeshProUGUI batteryWhText;
+        [SerializeField] private TextMeshProUGUI riggedLmbActionText;
+        [SerializeField] private TextMeshProUGUI riggedCableText;
+
+        [Header("Display Settings (Reference 1080p)")]
         [SerializeField] private bool showHUD = true;
-        [SerializeField] private float bottomOffset = 26f;
+        [Tooltip("Positioned above subtitles (Y=60..150) so they never overlap.")]
+        [SerializeField] private float bottomOffset = 210f;
 
         // References
         private WinchSystem winch;
         private WinchEnergySystem energy;
+        private Interactor interactor;
 
         // Animation smoothers
         private float displayedEnergy = 1f;
         private float promptAlpha = 0f;
+
+        private static readonly Color ColorDarkBg = new Color(0.08f, 0.10f, 0.14f, 0.94f);
+        private static readonly Color ColorKeycapBg = new Color(0.14f, 0.17f, 0.23f, 0.98f);
+        private static readonly Color ColorKeycapAccent = new Color(1f, 0.74f, 0.22f, 1f); // Warm gold/amber
+        private static readonly Color ColorCyan = new Color(0.22f, 0.74f, 0.97f, 1f);      // Winch sky blue
+        private static readonly Color ColorEmerald = new Color(0.20f, 0.85f, 0.55f, 1f);   // Active motor green
+        private static readonly Color ColorAmber = new Color(1f, 0.75f, 0.15f, 1f);       // Warning / brake gold
+        private static readonly Color ColorCrimson = new Color(0.96f, 0.28f, 0.28f, 1f);   // Restraint red
+
+        private void Awake()
+        {
+            LoadSpritesIfMissing();
+            EnsureUIHierarchy();
+        }
 
         private void Start()
         {
@@ -30,7 +91,28 @@ namespace FirstPersonSystem
                 energy = winch.GetComponent<WinchEnergySystem>();
             }
 
-            MinimalIMGUI.EnsureInitialized();
+            interactor = GetComponent<Interactor>();
+            if (interactor == null && winch != null)
+            {
+                interactor = winch.GetComponent<Interactor>();
+            }
+
+            LoadSpritesIfMissing();
+            EnsureUIHierarchy();
+        }
+
+        private void LoadSpritesIfMissing()
+        {
+#if UNITY_EDITOR
+            if (panelBgSprite == null) panelBgSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/panel_background.png");
+            if (keycapSprite == null) keycapSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/keycap_badge.png");
+            if (statusPillSprite == null) statusPillSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/status_pill.png");
+            if (gaugeTrackSprite == null) gaugeTrackSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/gauge_track.png");
+            if (gaugeFillSprite == null) gaugeFillSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/gauge_fill.png");
+            if (iconAnchorSprite == null) iconAnchorSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/icon_anchor.png");
+            if (iconBatterySprite == null) iconBatterySprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/icon_battery.png");
+            if (iconWarningSprite == null) iconWarningSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/icon_warning.png");
+#endif
         }
 
         private void Update()
@@ -38,6 +120,7 @@ namespace FirstPersonSystem
             if (winch == null) winch = WinchSystem.Instance;
             if (winch == null) return;
             if (energy == null) energy = winch.GetComponent<WinchEnergySystem>();
+            if (interactor == null) interactor = winch.GetComponent<Interactor>();
 
             float dt = Time.deltaTime;
 
@@ -47,193 +130,557 @@ namespace FirstPersonSystem
 
             // Calculate target alpha for HUD deck
             float targetAlpha = 0f;
-            switch (winch.CurrentState)
+            if (showHUD)
             {
-                case WinchSystem.WinchState.Idle:
-                    targetAlpha = winch.IsAimingAtAnchorable ? 1f : 0f;
-                    break;
-                case WinchSystem.WinchState.CarryingRope:
-                case WinchSystem.WinchState.WinchRigged:
-                    targetAlpha = 1f;
-                    break;
+                switch (winch.CurrentState)
+                {
+                    case WinchSystem.WinchState.Idle:
+                        targetAlpha = winch.IsAimingAtAnchorable ? 1f : 0f;
+                        break;
+                    case WinchSystem.WinchState.CarryingRope:
+                    case WinchSystem.WinchState.WinchRigged:
+                        targetAlpha = 1f;
+                        break;
+                }
             }
+
             promptAlpha = Mathf.MoveTowards(promptAlpha, targetAlpha, dt * 6f);
+
+            if (rootCanvasGroup != null)
+            {
+                rootCanvasGroup.alpha = promptAlpha;
+            }
+
+            if (promptAlpha <= 0.005f) return;
+
+            // Update contextual state panels
+            UpdateStatePanels();
         }
 
-        private void OnGUI()
+        private void UpdateStatePanels()
         {
-            if (!showHUD || Event.current.type != EventType.Repaint) return;
-            if (winch == null) winch = WinchSystem.Instance;
-            if (winch == null) return;
-            if (energy == null) energy = winch.GetComponent<WinchEnergySystem>();
+            WinchSystem.WinchState state = winch.CurrentState;
 
-            MinimalIMGUI.EnsureInitialized();
+            if (idleContainer != null) idleContainer.SetActive(state == WinchSystem.WinchState.Idle);
+            if (carryingRopeContainer != null) carryingRopeContainer.SetActive(state == WinchSystem.WinchState.CarryingRope);
+            if (winchRiggedContainer != null) winchRiggedContainer.SetActive(state == WinchSystem.WinchState.WinchRigged);
 
-            float screenW = Screen.width;
-            float screenH = Screen.height;
-
-            switch (winch.CurrentState)
+            // 1. Idle State: Aiming at Anchorable Tree
+            if (state == WinchSystem.WinchState.Idle)
             {
-                case WinchSystem.WinchState.Idle:
-                    DrawIdleHUD(screenW, screenH);
-                    break;
-                case WinchSystem.WinchState.CarryingRope:
-                    DrawCarryingRopeHUD(screenW, screenH);
-                    break;
-                case WinchSystem.WinchState.WinchRigged:
-                    DrawWinchRiggedHUD(screenW, screenH);
-                    break;
+                if (idleActionText != null)
+                {
+                    if (winch.LastAnchorHit.collider != null)
+                    {
+                        float dist = winch.LastAnchorHit.distance;
+                        idleActionText.text = $"DRIVE ANCHOR INTO TREE ({dist:F1}m)";
+                    }
+                    else
+                    {
+                        idleActionText.text = "DRIVE ANCHOR INTO TREE";
+                    }
+                }
+            }
+            // 2. Carrying Rope State
+            else if (state == WinchSystem.WinchState.CarryingRope)
+            {
+                float currentLength = winch.CurrentRopeLength;
+                float maxLength = winch.MaxRopeLength;
+                float ratio = maxLength > 0f ? Mathf.Clamp01(currentLength / maxLength) : 0f;
+
+                if (cableLengthText != null)
+                {
+                    cableLengthText.text = $"{currentLength:F1}m / {maxLength:F0}m";
+                }
+
+                bool isStrained = ratio > 0.85f;
+                if (cableFillBar != null)
+                {
+                    cableFillBar.fillAmount = ratio;
+                    cableFillBar.color = isStrained ? ColorCrimson : ColorCyan;
+                }
+
+                if (carryingStatusText != null)
+                {
+                    carryingStatusText.text = isStrained ? "CABLE LIMIT" : "CABLE ACTIVE";
+                    carryingStatusText.color = isStrained ? ColorCrimson : ColorCyan;
+                }
+
+                if (carryingStatusPill != null)
+                {
+                    carryingStatusPill.color = isStrained ? new Color(ColorCrimson.r, ColorCrimson.g, ColorCrimson.b, 0.45f) : new Color(ColorCyan.r, ColorCyan.g, ColorCyan.b, 0.35f);
+                }
+
+                // Check distance and line of sight to Coffin
+                CoffinPullable coffin = CoffinPullable.Instance;
+                float distToCoffin = 0f;
+                bool isAimingCoffin = false;
+
+                if (coffin != null)
+                {
+                    Camera cam = Camera.main;
+                    Vector3 camPos = cam != null ? cam.transform.position : transform.position;
+                    distToCoffin = Vector3.Distance(camPos, coffin.transform.position);
+
+                    if (interactor != null && interactor.CurrentInteractable is CoffinPullable)
+                    {
+                        isAimingCoffin = true;
+                    }
+                    else if (distToCoffin <= 4.5f)
+                    {
+                        isAimingCoffin = true;
+                    }
+                }
+
+                if (carryingLmbActionText != null)
+                {
+                    if (isAimingCoffin)
+                    {
+                        carryingLmbActionText.text = "ATTACH TO COFFIN";
+                        carryingLmbActionText.color = ColorEmerald;
+                    }
+                    else if (coffin != null)
+                    {
+                        carryingLmbActionText.text = $"CARRY TO COFFIN ({distToCoffin:F1}m)";
+                        carryingLmbActionText.color = new Color(0.92f, 0.94f, 0.97f, 1f);
+                    }
+                    else
+                    {
+                        carryingLmbActionText.text = "ATTACH TO COFFIN";
+                        carryingLmbActionText.color = new Color(0.92f, 0.94f, 0.97f, 1f);
+                    }
+                }
+            }
+            // 3. Winch Rigged State
+            else if (state == WinchSystem.WinchState.WinchRigged)
+            {
+                bool isReeling = winch.IsWinching;
+                bool hasBattery = energy == null || energy.CurrentEnergy > 0.05f;
+
+                if (motorStatusBadgeText != null)
+                {
+                    if (!hasBattery)
+                    {
+                        motorStatusBadgeText.text = "BATTERY DEPLETED";
+                        motorStatusBadgeText.color = ColorCrimson;
+                    }
+                    else if (isReeling)
+                    {
+                        motorStatusBadgeText.text = "REELING ACTIVE";
+                        motorStatusBadgeText.color = ColorEmerald;
+                    }
+                    else
+                    {
+                        motorStatusBadgeText.text = "BRAKE LOCKED";
+                        motorStatusBadgeText.color = ColorAmber;
+                    }
+                }
+
+                if (motorStatusDot != null)
+                {
+                    float pulse = (Mathf.Sin(Time.time * 8f) + 1f) * 0.5f;
+                    Color dotCol = !hasBattery ? ColorCrimson : (isReeling ? Color.Lerp(ColorEmerald, Color.white, pulse * 0.45f) : ColorAmber);
+                    motorStatusDot.color = dotCol;
+                }
+
+                if (riggedCableText != null)
+                {
+                    riggedCableText.text = $"{winch.CurrentRopeLength:F1}m";
+                }
+
+                if (riggedLmbActionText != null)
+                {
+                    if (!hasBattery)
+                    {
+                        riggedLmbActionText.text = "NO POWER";
+                        riggedLmbActionText.color = ColorCrimson;
+                    }
+                    else if (isReeling)
+                    {
+                        riggedLmbActionText.text = "PULLING COFFIN...";
+                        riggedLmbActionText.color = ColorEmerald;
+                    }
+                    else
+                    {
+                        riggedLmbActionText.text = "REEL WINCH";
+                        riggedLmbActionText.color = new Color(0.92f, 0.94f, 0.97f, 1f);
+                    }
+                }
+
+                if (energy != null)
+                {
+                    if (batteryFillBar != null)
+                    {
+                        batteryFillBar.fillAmount = displayedEnergy;
+                        if (displayedEnergy > 0.35f)
+                            batteryFillBar.color = ColorCyan;
+                        else if (displayedEnergy > 0.15f)
+                            batteryFillBar.color = ColorAmber;
+                        else
+                        {
+                            float flash = (Mathf.Sin(Time.time * 10f) + 1f) * 0.5f;
+                            batteryFillBar.color = Color.Lerp(ColorCrimson, Color.white, flash * 0.5f);
+                        }
+                    }
+
+                    if (batteryWhText != null)
+                    {
+                        batteryWhText.text = $"{energy.CurrentEnergy:F0} Wh";
+                    }
+                }
             }
         }
 
         /// <summary>
-        /// Idle State: unobtrusive, only appears if player crosshair is on an anchorable surface.
+        /// Automatically discovers or constructs the complete uGUI winch hierarchy under the Canvas.
         /// </summary>
-        private void DrawIdleHUD(float screenW, float screenH)
+        public void EnsureUIHierarchy()
         {
-            if (promptAlpha <= 0.005f) return;
-
-            float panelW = 270f;
-            float panelH = 46f;
-            float panelX = (screenW - panelW) * 0.5f;
-            float panelY = screenH - bottomOffset - panelH;
-            Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
-
-            // Translucent dark panel with warm gold accent
-            Color bgTint = new Color(MinimalIMGUI.ColorDarkBg.r, MinimalIMGUI.ColorDarkBg.g, MinimalIMGUI.ColorDarkBg.b, 0.88f * promptAlpha);
-            Color accent = new Color(MinimalIMGUI.ColorAmber.r, MinimalIMGUI.ColorAmber.g, MinimalIMGUI.ColorAmber.b, 0.85f * promptAlpha);
-            MinimalIMGUI.DrawPanel(panelRect, bgTint, accent, 2f);
-
-            // Anchor icon
-            float iconSize = 20f;
-            Rect iconRect = new Rect(panelX + 16f, panelY + (panelH - iconSize) * 0.5f, iconSize, iconSize);
-            MinimalIMGUI.DrawIcon(iconRect, MinimalIMGUI.IconAnchor, Color.white, promptAlpha * 0.85f);
-
-            // Keycap [ E ] & Action prompt
-            float cursorX = panelX + 46f;
-            float cursorY = panelY + (panelH - 22f) * 0.5f;
-            MinimalIMGUI.DrawKeyPrompt(ref cursorX, cursorY, "E", "DEPLOY ANCHOR", MinimalIMGUI.ColorKeycapAccent, promptAlpha);
-        }
-
-        /// <summary>
-        /// Carrying Rope State: shows deployed cable length vs capacity, plus attach/cancel controls.
-        /// </summary>
-        private void DrawCarryingRopeHUD(float screenW, float screenH)
-        {
-            if (promptAlpha <= 0.005f) return;
-
-            float panelW = 440f;
-            float panelH = 76f;
-            float panelX = (screenW - panelW) * 0.5f;
-            float panelY = screenH - bottomOffset - panelH;
-            Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
-
-            Color bgTint = new Color(MinimalIMGUI.ColorDarkBg.r, MinimalIMGUI.ColorDarkBg.g, MinimalIMGUI.ColorDarkBg.b, 0.92f * promptAlpha);
-            Color accent = new Color(MinimalIMGUI.ColorCyan.r, MinimalIMGUI.ColorCyan.g, MinimalIMGUI.ColorCyan.b, 0.9f * promptAlpha);
-            MinimalIMGUI.DrawPanel(panelRect, bgTint, accent, 2f);
-
-            // Row 1: Status badge & cable length readout
-            float row1Y = panelY + 11f;
-            Rect badgeRect = new Rect(panelX + 14f, row1Y, 138f, 22f);
-            MinimalIMGUI.DrawStatusBadge(badgeRect, "CABLE ACTIVE", MinimalIMGUI.ColorCyan, promptAlpha);
-
-            float currentLength = winch.CurrentRopeLength;
-            float maxLength = winch.MaxRopeLength;
-            string lengthText = $"{currentLength:F1}m / {maxLength:F0}m";
-
-            Rect lengthRect = new Rect(panelX + panelW - 150f, row1Y, 136f, 22f);
-            MinimalIMGUI.ValueStyle.normal.textColor = new Color(0.95f, 0.95f, 0.95f, promptAlpha);
-            GUI.Label(lengthRect, lengthText, MinimalIMGUI.ValueStyle);
-
-            // Subtle 3px rope capacity meter
-            float ropeRatio = maxLength > 0f ? Mathf.Clamp01(currentLength / maxLength) : 0f;
-            Rect barRect = new Rect(panelX + 160f, row1Y + 9f, panelW - 324f, 4f);
-            Color ropeBarColor = ropeRatio > 0.85f ? MinimalIMGUI.ColorCrimson : MinimalIMGUI.ColorCyan;
-            MinimalIMGUI.DrawProgressBar(barRect, ropeRatio, ropeBarColor, new Color(0.12f, 0.15f, 0.20f, 0.8f), promptAlpha);
-
-            // Row 2: Action Keycaps
-            float row2Y = panelY + 42f;
-            float cursorX = panelX + 14f;
-            MinimalIMGUI.DrawKeyPrompt(ref cursorX, row2Y, "LMB", "ATTACH COFFIN", MinimalIMGUI.ColorKeycapAccent, promptAlpha);
-            MinimalIMGUI.DrawKeyPrompt(ref cursorX, row2Y, "Q", "CANCEL", new Color(1f, 0.42f, 0.42f, 1f), promptAlpha);
-        }
-
-        /// <summary>
-        /// Winch Rigged State: shows motor state, high-tech battery gauge, and reel/detach controls.
-        /// </summary>
-        private void DrawWinchRiggedHUD(float screenW, float screenH)
-        {
-            if (promptAlpha <= 0.005f) return;
-
-            float panelW = 490f;
-            float panelH = 88f;
-            float panelX = (screenW - panelW) * 0.5f;
-            float panelY = screenH - bottomOffset - panelH;
-            Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
-
-            bool isReeling = winch.IsWinching;
-            Color themeColor = isReeling ? MinimalIMGUI.ColorEmerald : MinimalIMGUI.ColorAmber;
-
-            Color bgTint = new Color(MinimalIMGUI.ColorDarkBg.r, MinimalIMGUI.ColorDarkBg.g, MinimalIMGUI.ColorDarkBg.b, 0.94f * promptAlpha);
-            MinimalIMGUI.DrawPanel(panelRect, bgTint, themeColor, 2f);
-
-            // Row 1: Motor state badge (Left) & Battery gauge (Right)
-            float row1Y = panelY + 12f;
-
-            if (isReeling)
+            if (targetCanvas == null)
             {
-                float pulse = (Mathf.Sin(Time.time * 8f) + 1f) * 0.5f;
-                Color activeColor = Color.Lerp(MinimalIMGUI.ColorEmerald, Color.white, pulse * 0.25f);
-                Rect statusRect = new Rect(panelX + 14f, row1Y, 134f, 24f);
-                MinimalIMGUI.DrawStatusBadge(statusRect, "REELING ACTIVE", activeColor, promptAlpha);
+                // Prefer dedicated MountainGameHUDCanvas
+                GameObject hudCanvasObj = GameObject.Find("MountainGameHUDCanvas");
+                if (hudCanvasObj != null) targetCanvas = hudCanvasObj.GetComponent<Canvas>();
+
+                if (targetCanvas == null)
+                {
+                    Canvas myCanvas = GetComponentInParent<Canvas>();
+                    if (myCanvas != null) targetCanvas = myCanvas;
+                }
+
+                if (targetCanvas == null)
+                {
+                    targetCanvas = FindAnyObjectByType<Canvas>();
+                }
+            }
+
+            if (targetCanvas == null) return;
+
+            LoadSpritesIfMissing();
+
+            // 1. Root Winch HUD Container under Canvas
+            Transform existing = targetCanvas.transform.Find("WinchHUD");
+            GameObject rootObj;
+            if (existing != null)
+            {
+                rootObj = existing.gameObject;
             }
             else
             {
-                Rect statusRect = new Rect(panelX + 14f, row1Y, 134f, 24f);
-                MinimalIMGUI.DrawStatusBadge(statusRect, "BRAKE LOCKED", MinimalIMGUI.ColorAmber, promptAlpha);
+                rootObj = new GameObject("WinchHUD", typeof(RectTransform), typeof(CanvasGroup));
+                rootObj.transform.SetParent(targetCanvas.transform, false);
             }
 
-            // Battery section
-            if (energy != null)
+            rootCanvasGroup = rootObj.GetComponent<CanvasGroup>();
+            if (rootCanvasGroup == null) rootCanvasGroup = rootObj.AddComponent<CanvasGroup>();
+            rootCanvasGroup.alpha = 0f;
+            rootCanvasGroup.blocksRaycasts = false;
+            rootCanvasGroup.interactable = false;
+
+            RectTransform rootRect = rootObj.GetComponent<RectTransform>();
+            rootRect.anchorMin = new Vector2(0.5f, 0f);
+            rootRect.anchorMax = new Vector2(0.5f, 0f);
+            rootRect.pivot = new Vector2(0.5f, 0f);
+            rootRect.anchoredPosition = new Vector2(0f, bottomOffset);
+            rootRect.sizeDelta = new Vector2(560f, 88f);
+
+            // 2. Idle State Container
+            idleContainer = EnsureChildPanel(rootObj.transform, "IdlePanel", new Vector2(340f, 52f), (panel) =>
             {
-                float batX = panelX + 162f;
-                float batW = panelW - 176f;
+                // Anchor Icon
+                CreateIcon(panel.transform, new Vector2(-130f, 0f), new Vector2(24f, 24f), iconAnchorSprite, ColorKeycapAccent);
+
+                // Keycap Prompt: [LMB] DRIVE ANCHOR INTO TREE
+                CreateKeycapPrompt(panel.transform, new Vector2(-20f, 0f), "LMB", "DRIVE ANCHOR INTO TREE", out idleKeycapText, out idleActionText);
+            });
+
+            // 3. Carrying Rope State Container
+            carryingRopeContainer = EnsureChildPanel(rootObj.transform, "CarryingRopePanel", new Vector2(540f, 82f), (panel) =>
+            {
+                // Row 1: Status Pill Badge + Cable Bar + Numeric Readout
+                CreateStatusPill(panel.transform, new Vector2(-170f, 16f), new Vector2(130f, 24f), "CABLE ACTIVE", ColorCyan, statusPillSprite, out carryingStatusPill, out carryingStatusText);
+
+                cableFillBar = CreateProgressBar(panel.transform, new Vector2(10f, 16f), new Vector2(160f, 10f), gaugeTrackSprite, gaugeFillSprite);
+
+                cableLengthText = CreateText(panel.transform, new Vector2(185f, 16f), new Vector2(120f, 22f), "0.0m / 50m", 13f, Color.white, TextAlignmentOptions.Right);
+
+                // Row 2: Contextual Actions
+                CreateKeycapPrompt(panel.transform, new Vector2(-80f, -18f), "LMB", "ATTACH TO COFFIN", out _, out carryingLmbActionText, ColorEmerald);
+                CreateKeycapPrompt(panel.transform, new Vector2(150f, -18f), "Q", "CANCEL CABLE", out _, out _, new Color(1f, 0.45f, 0.45f, 1f));
+            });
+
+            // 4. Winch Rigged State Container
+            winchRiggedContainer = EnsureChildPanel(rootObj.transform, "WinchRiggedPanel", new Vector2(560f, 88f), (panel) =>
+            {
+                // Row 1: Status Pill Badge with Dot
+                CreateStatusPillWithDot(panel.transform, new Vector2(-185f, 18f), new Vector2(146f, 26f), "REELING ACTIVE", ColorEmerald, statusPillSprite, out motorStatusPill, out motorStatusBadgeText, out motorStatusDot);
+
+                // Cable length readout
+                riggedCableText = CreateText(panel.transform, new Vector2(-65f, 18f), new Vector2(65f, 22f), "24.5m", 12f, ColorCyan, TextAlignmentOptions.Center);
 
                 // Battery Icon
-                float iconSize = 18f;
-                Rect iconRect = new Rect(batX, row1Y + 3f, iconSize, iconSize);
-                MinimalIMGUI.DrawIcon(iconRect, MinimalIMGUI.IconBattery, Color.white, promptAlpha * 0.85f);
+                CreateIcon(panel.transform, new Vector2(-15f, 18f), new Vector2(18f, 18f), iconBatterySprite, ColorKeycapAccent);
 
                 // Battery Bar
-                float gaugeX = batX + iconSize + 8f;
-                float gaugeW = batW - iconSize - 74f;
-                Rect gaugeRect = new Rect(gaugeX, row1Y + 5f, gaugeW, 14f);
+                batteryFillBar = CreateProgressBar(panel.transform, new Vector2(75f, 18f), new Vector2(130f, 12f), gaugeTrackSprite, gaugeFillSprite);
 
-                Color batFillColor;
-                if (displayedEnergy > 0.35f)
-                    batFillColor = MinimalIMGUI.ColorCyan;
-                else if (displayedEnergy > 0.15f)
-                    batFillColor = MinimalIMGUI.ColorAmber;
-                else
-                {
-                    float flash = (Mathf.Sin(Time.time * 10f) + 1f) * 0.5f;
-                    batFillColor = Color.Lerp(MinimalIMGUI.ColorCrimson, Color.white, flash * 0.5f);
-                }
+                // Battery Numeric Readout
+                batteryWhText = CreateText(panel.transform, new Vector2(195f, 18f), new Vector2(85f, 22f), "100 Wh", 13f, Color.white, TextAlignmentOptions.Right);
 
-                MinimalIMGUI.DrawProgressBar(gaugeRect, displayedEnergy, batFillColor, new Color(0.08f, 0.10f, 0.14f, 0.9f), promptAlpha);
+                // Row 2: Rigged Keycap Actions
+                CreateKeycapPrompt(panel.transform, new Vector2(-95f, -18f), "HOLD LMB", "REEL WINCH", out _, out riggedLmbActionText);
+                CreateKeycapPrompt(panel.transform, new Vector2(130f, -18f), "Q", "DETACH CABLE", out _, out _, new Color(1f, 0.45f, 0.45f, 1f));
+            });
+        }
 
-                // Numeric readout
-                Rect readRect = new Rect(gaugeX + gaugeW + 8f, row1Y, 56f, 24f);
-                MinimalIMGUI.ValueStyle.fontSize = 13;
-                MinimalIMGUI.ValueStyle.normal.textColor = new Color(0.92f, 0.94f, 0.96f, promptAlpha);
-                GUI.Label(readRect, $"{energy.CurrentEnergy:F0} Wh", MinimalIMGUI.ValueStyle);
+        private GameObject EnsureChildPanel(Transform parent, string name, Vector2 size, Action<GameObject> buildCallback)
+        {
+            Transform existing = parent.Find(name);
+            if (existing != null) return existing.gameObject;
+
+            GameObject panelObj = new GameObject(name, typeof(RectTransform), typeof(Image));
+            panelObj.transform.SetParent(parent, false);
+
+            RectTransform rect = panelObj.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = size;
+
+            Image bg = panelObj.GetComponent<Image>();
+            if (panelBgSprite != null)
+            {
+                bg.sprite = panelBgSprite;
+                bg.type = Image.Type.Sliced;
+                bg.color = ColorDarkBg;
             }
+            else
+            {
+                bg.color = ColorDarkBg;
+            }
+            bg.raycastTarget = false;
 
-            // Row 2: Action Keycaps
-            float row2Y = panelY + 50f;
-            float cursorX = panelX + 14f;
-            MinimalIMGUI.DrawKeyPrompt(ref cursorX, row2Y, "HOLD LMB", "PULL COFFIN", MinimalIMGUI.ColorKeycapAccent, promptAlpha);
-            MinimalIMGUI.DrawKeyPrompt(ref cursorX, row2Y, "Q", "DISCONNECT", new Color(1f, 0.45f, 0.45f, 1f), promptAlpha);
+            buildCallback?.Invoke(panelObj);
+            return panelObj;
+        }
+
+        private void CreateIcon(Transform parent, Vector2 pos, Vector2 size, Sprite sprite, Color tint)
+        {
+            if (sprite == null) return;
+            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            iconObj.transform.SetParent(parent, false);
+
+            RectTransform r = iconObj.GetComponent<RectTransform>();
+            r.anchoredPosition = pos;
+            r.sizeDelta = size;
+
+            Image img = iconObj.GetComponent<Image>();
+            img.sprite = sprite;
+            img.color = tint;
+            img.raycastTarget = false;
+        }
+
+        private void CreateKeycapPrompt(Transform parent, Vector2 anchoredPos, string key, string actionText, out TextMeshProUGUI keyOut, out TextMeshProUGUI actionOut, Color? customAccent = null)
+        {
+            Color accent = customAccent ?? ColorKeycapAccent;
+            GameObject group = new GameObject($"KeyPrompt_{key}", typeof(RectTransform));
+            group.transform.SetParent(parent, false);
+
+            RectTransform gRect = group.GetComponent<RectTransform>();
+            gRect.anchoredPosition = anchoredPos;
+            gRect.sizeDelta = new Vector2(200f, 26f);
+
+            // Keycap Box (uses keycap_badge.png 9-sliced)
+            GameObject keyBox = new GameObject("Keycap", typeof(RectTransform), typeof(Image));
+            keyBox.transform.SetParent(group.transform, false);
+            RectTransform kRect = keyBox.GetComponent<RectTransform>();
+            kRect.anchorMin = new Vector2(0f, 0.5f);
+            kRect.anchorMax = new Vector2(0f, 0.5f);
+            kRect.pivot = new Vector2(0f, 0.5f);
+            float keyW = Mathf.Max(38f, key.Length * 11f + 18f);
+            kRect.sizeDelta = new Vector2(keyW, 24f);
+
+            Image kImg = keyBox.GetComponent<Image>();
+            if (keycapSprite != null)
+            {
+                kImg.sprite = keycapSprite;
+                kImg.type = Image.Type.Sliced;
+                kImg.color = ColorKeycapBg;
+            }
+            else
+            {
+                kImg.color = ColorKeycapBg;
+            }
+            kImg.raycastTarget = false;
+
+            // Keycap Text
+            GameObject kTextObj = new GameObject("KeyText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            kTextObj.transform.SetParent(keyBox.transform, false);
+            RectTransform ktRect = kTextObj.GetComponent<RectTransform>();
+            ktRect.anchorMin = Vector2.zero;
+            ktRect.anchorMax = Vector2.one;
+            ktRect.sizeDelta = Vector2.zero;
+            keyOut = kTextObj.GetComponent<TextMeshProUGUI>();
+            keyOut.text = key;
+            keyOut.fontSize = 11.5f;
+            keyOut.fontStyle = FontStyles.Bold;
+            keyOut.alignment = TextAlignmentOptions.Center;
+            keyOut.color = accent;
+            keyOut.raycastTarget = false;
+
+            // Action Label
+            GameObject actObj = new GameObject("ActionText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            actObj.transform.SetParent(group.transform, false);
+            RectTransform aRect = actObj.GetComponent<RectTransform>();
+            aRect.anchorMin = new Vector2(0f, 0.5f);
+            aRect.anchorMax = new Vector2(0f, 0.5f);
+            aRect.pivot = new Vector2(0f, 0.5f);
+            aRect.anchoredPosition = new Vector2(keyW + 8f, 0f);
+            aRect.sizeDelta = new Vector2(170f, 22f);
+            actionOut = actObj.GetComponent<TextMeshProUGUI>();
+            actionOut.text = actionText;
+            actionOut.fontSize = 11.5f;
+            actionOut.fontStyle = FontStyles.Bold;
+            actionOut.alignment = TextAlignmentOptions.Left;
+            actionOut.color = new Color(0.92f, 0.94f, 0.97f, 1f);
+            actionOut.raycastTarget = false;
+        }
+
+        private void CreateStatusPill(Transform parent, Vector2 pos, Vector2 size, string text, Color color, Sprite pillSprite, out Image pillImg, out TextMeshProUGUI pillText)
+        {
+            GameObject badge = new GameObject("StatusPill", typeof(RectTransform), typeof(Image));
+            badge.transform.SetParent(parent, false);
+            RectTransform bRect = badge.GetComponent<RectTransform>();
+            bRect.anchoredPosition = pos;
+            bRect.sizeDelta = size;
+            pillImg = badge.GetComponent<Image>();
+            if (pillSprite != null)
+            {
+                pillImg.sprite = pillSprite;
+                pillImg.type = Image.Type.Sliced;
+            }
+            pillImg.color = new Color(color.r, color.g, color.b, 0.35f);
+            pillImg.raycastTarget = false;
+
+            GameObject bText = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            bText.transform.SetParent(badge.transform, false);
+            RectTransform btRect = bText.GetComponent<RectTransform>();
+            btRect.anchorMin = Vector2.zero;
+            btRect.anchorMax = Vector2.one;
+            btRect.sizeDelta = Vector2.zero;
+            pillText = bText.GetComponent<TextMeshProUGUI>();
+            pillText.text = text;
+            pillText.fontSize = 11f;
+            pillText.fontStyle = FontStyles.Bold;
+            pillText.alignment = TextAlignmentOptions.Center;
+            pillText.color = color;
+            pillText.raycastTarget = false;
+        }
+
+        private void CreateStatusPillWithDot(Transform parent, Vector2 pos, Vector2 size, string text, Color color, Sprite pillSprite, out Image pillImg, out TextMeshProUGUI badgeText, out Image badgeDot)
+        {
+            GameObject badge = new GameObject("StatusPill", typeof(RectTransform), typeof(Image));
+            badge.transform.SetParent(parent, false);
+            RectTransform bRect = badge.GetComponent<RectTransform>();
+            bRect.anchoredPosition = pos;
+            bRect.sizeDelta = size;
+            pillImg = badge.GetComponent<Image>();
+            if (pillSprite != null)
+            {
+                pillImg.sprite = pillSprite;
+                pillImg.type = Image.Type.Sliced;
+            }
+            pillImg.color = new Color(color.r, color.g, color.b, 0.35f);
+            pillImg.raycastTarget = false;
+
+            // Dot
+            GameObject dotObj = new GameObject("Dot", typeof(RectTransform), typeof(Image));
+            dotObj.transform.SetParent(badge.transform, false);
+            RectTransform dRect = dotObj.GetComponent<RectTransform>();
+            dRect.anchorMin = new Vector2(0f, 0.5f);
+            dRect.anchorMax = new Vector2(0f, 0.5f);
+            dRect.pivot = new Vector2(0f, 0.5f);
+            dRect.anchoredPosition = new Vector2(10f, 0f);
+            dRect.sizeDelta = new Vector2(7f, 7f);
+            badgeDot = dotObj.GetComponent<Image>();
+            badgeDot.color = color;
+            badgeDot.raycastTarget = false;
+
+            // Text
+            GameObject bText = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            bText.transform.SetParent(badge.transform, false);
+            RectTransform btRect = bText.GetComponent<RectTransform>();
+            btRect.anchorMin = new Vector2(0f, 0f);
+            btRect.anchorMax = new Vector2(1f, 1f);
+            btRect.offsetMin = new Vector2(22f, 0f);
+            btRect.offsetMax = Vector2.zero;
+            badgeText = bText.GetComponent<TextMeshProUGUI>();
+            badgeText.text = text;
+            badgeText.fontSize = 11f;
+            badgeText.fontStyle = FontStyles.Bold;
+            badgeText.alignment = TextAlignmentOptions.Left;
+            badgeText.color = color;
+            badgeText.raycastTarget = false;
+        }
+
+        private Image CreateProgressBar(Transform parent, Vector2 pos, Vector2 size, Sprite trackSprite, Sprite fillSprite)
+        {
+            GameObject track = new GameObject("GaugeTrack", typeof(RectTransform), typeof(Image));
+            track.transform.SetParent(parent, false);
+            RectTransform tRect = track.GetComponent<RectTransform>();
+            tRect.anchoredPosition = pos;
+            tRect.sizeDelta = size;
+            Image tImg = track.GetComponent<Image>();
+            if (trackSprite != null)
+            {
+                tImg.sprite = trackSprite;
+                tImg.type = Image.Type.Sliced;
+                tImg.color = new Color(0.05f, 0.07f, 0.10f, 0.95f);
+            }
+            else
+            {
+                tImg.color = new Color(0.04f, 0.05f, 0.08f, 0.95f);
+            }
+            tImg.raycastTarget = false;
+
+            GameObject fill = new GameObject("GaugeFill", typeof(RectTransform), typeof(Image));
+            fill.transform.SetParent(track.transform, false);
+            RectTransform fRect = fill.GetComponent<RectTransform>();
+            fRect.anchorMin = Vector2.zero;
+            fRect.anchorMax = Vector2.one;
+            fRect.sizeDelta = Vector2.zero;
+            Image fImg = fill.GetComponent<Image>();
+            if (fillSprite != null)
+            {
+                fImg.sprite = fillSprite;
+            }
+            fImg.type = Image.Type.Filled;
+            fImg.fillMethod = Image.FillMethod.Horizontal;
+            fImg.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fImg.fillAmount = 1f;
+            fImg.color = ColorCyan;
+            fImg.raycastTarget = false;
+
+            return fImg;
+        }
+
+        private TextMeshProUGUI CreateText(Transform parent, Vector2 pos, Vector2 size, string text, float fontSize, Color color, TextAlignmentOptions align)
+        {
+            GameObject txtObj = new GameObject("TextLabel", typeof(RectTransform), typeof(TextMeshProUGUI));
+            txtObj.transform.SetParent(parent, false);
+            RectTransform r = txtObj.GetComponent<RectTransform>();
+            r.anchoredPosition = pos;
+            r.sizeDelta = size;
+
+            var tm = txtObj.GetComponent<TextMeshProUGUI>();
+            tm.text = text;
+            tm.fontSize = fontSize;
+            tm.fontStyle = FontStyles.Bold;
+            tm.color = color;
+            tm.alignment = align;
+            tm.raycastTarget = false;
+            return tm;
         }
     }
 }

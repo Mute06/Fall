@@ -151,6 +151,21 @@ namespace FirstPersonSystem
 
             //Lock cursor
             SetCursorLock(true);
+
+            EnsureFallingLeavesSystem();
+        }
+
+        private void EnsureFallingLeavesSystem()
+        {
+            Transform existing = transform.Find("FallingLeaves_ParticleSystem");
+            if (existing == null)
+            {
+                GameObject leavesGo = new GameObject("FallingLeaves_ParticleSystem");
+                leavesGo.transform.SetParent(transform, false);
+                leavesGo.transform.localPosition = new Vector3(0f, 7f, 0f);
+                var leavesSys = leavesGo.AddComponent<FallingLeavesSystem>();
+                leavesSys.InitializeSystem();
+            }
         }
 
 

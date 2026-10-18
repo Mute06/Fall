@@ -21,12 +21,17 @@ MonoBehaviour:
   terrainMaxHeightHeadroom: 60
   heightmapResolution: 513
   alphamapResolution: 512
-  startingFlatLength: 24
-  summitSafeLength: 22
+  startingFlatLength: 32
+  summitSafeLength: 30
   climbTierCount: 4
   safeAreaRatioPerTier: 0.28
   slopeProgressionExponent: 1.45
   safeZoneSlopeFactor: 0.03
+  enableSummitGraveHole: 1
+  graveHoleOffset: {x: 0, y: 3.5}
+  graveHoleSize: {x: 4, y: 6}
+  graveHoleDepth: 2.03
+  graveHoleBlendMargin: 0.739
   goldenPathStepRange: {x: 8, y: 12}
   pathMomentum: 0.65
   maxStepTurnDegrees: 28
@@ -142,30 +147,8 @@ MonoBehaviour:
     isAnchorable: 0
     materialOverrides: []
     targetMaterialSlot: -1
-  - label: Deadfall Log
-    prefab: {fileID: 0}
-    weight: 35
-    scaleRange: {x: 0.85, y: 1.25}
-    alignToNormal: 0.85
-    randomTiltDegrees: 5
-    footprintRadius: 1.8
-    verticalEmbedOffset: -0.1
-    isAnchorable: 1
-    materialOverrides: []
-    targetMaterialSlot: -1
   highSlopeHazardChance: 0.65
-  highSlopeHazards:
-  - label: Loose Scree Zone (Rollback Hazard)
-    prefab: {fileID: 0}
-    weight: 40
-    scaleRange: {x: 0.9, y: 1.25}
-    alignToNormal: 0.95
-    randomTiltDegrees: 3
-    footprintRadius: 2.5
-    verticalEmbedOffset: -0.05
-    isAnchorable: 0
-    materialOverrides: []
-    targetMaterialSlot: -1
+  highSlopeHazards: []
   decorativePoissonRadius: 2.8
   decorativeSpawnChance: 0.65
   decorativeRules: []

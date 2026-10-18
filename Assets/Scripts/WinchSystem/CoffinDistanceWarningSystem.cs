@@ -40,7 +40,7 @@ namespace FirstPersonSystem
         [Tooltip("Maximum safety clamp on the applied pull force to prevent erratic catapulting.")]
         [SerializeField] private float maxPullForce = 60f;
 
-        [Header("Warning UI (HUD)")]
+        [Header("Warning UI (uGUI Canvas)")]
         [SerializeField] private bool showHUDWarning = true;
         [SerializeField] private bool showDistanceMeter = true;
         [SerializeField] private bool showDirectionCue = true;
@@ -48,6 +48,14 @@ namespace FirstPersonSystem
         [SerializeField] private string warningHeader = "DON'T FORGET THE COFFIN";
         [SerializeField] private string warningSubText = "You are wandering too far from the coffin!";
         [SerializeField] private string boundarySubText = "MAXIMUM DISTANCE REACHED — RETURN TO COFFIN";
+        [SerializeField] private Canvas targetCanvas;
+        [SerializeField] private CanvasGroup warningCanvasGroup;
+        [SerializeField] private UnityEngine.UI.Image vignetteOverlay;
+        [SerializeField] private UnityEngine.UI.Image warningBarFill;
+        [SerializeField] private TextMeshProUGUI warningBadgeText;
+        [SerializeField] private TextMeshProUGUI distanceReadoutText;
+        [SerializeField] private TextMeshProUGUI subInstructionText;
+        [SerializeField] private TextMeshProUGUI directionCueText;
         [SerializeField] private TextMeshProUGUI customCanvasText;
 
         [Header("Audio Feedback")]
@@ -115,7 +123,7 @@ namespace FirstPersonSystem
         private void Start()
         {
             LocateCoffinIfMissing();
-            InitStyles();
+            EnsureUIHierarchy();
         }
 
         private void LocateCoffinIfMissing()
@@ -196,6 +204,10 @@ namespace FirstPersonSystem
         private void LateUpdate()
         {
             EvaluateDistanceState(Time.deltaTime);
+            if (showHUDWarning)
+            {
+                UpdateCanvasUI();
+            }
         }
 
         public void EvaluateDistanceState(float dt)
@@ -323,119 +335,297 @@ namespace FirstPersonSystem
             }
         }
 
-        private void InitStyles()
+        private void EnsureUIHierarchy()
         {
-            MinimalIMGUI.EnsureInitialized();
-        }
-
-        private void OnGUI()
-        {
-            if (!showHUDWarning || bannerAlpha <= 0.001f || Event.current.type != EventType.Repaint) return;
-
-            MinimalIMGUI.EnsureInitialized();
-
-            float screenW = Screen.width;
-            float screenH = Screen.height;
-
-            // Compute pulsation animation
-            float pulseFrequency = isRestrained ? 8f : Mathf.Lerp(3f, 6.5f, Mathf.InverseLerp(warningDistance, maxDistance, currentDistance));
-            float pulse = (Mathf.Sin(Time.time * pulseFrequency) + 1f) * 0.5f;
-
-            // Determine theme color
-            Color themeColor;
-            if (isRestrained)
+            if (targetCanvas == null)
             {
-                // Pulsing aggressive red
-                themeColor = Color.Lerp(MinimalIMGUI.ColorCrimson, new Color(1f, 0.85f, 0.85f), pulse * 0.5f);
+                GameObject hudCanvasObj = GameObject.Find("MountainGameHUDCanvas");
+                if (hudCanvasObj != null) targetCanvas = hudCanvasObj.GetComponent<Canvas>();
+
+                if (targetCanvas == null)
+                {
+                    Canvas myCanvas = GetComponentInParent<Canvas>();
+                    if (myCanvas != null) targetCanvas = myCanvas;
+                }
+
+                if (targetCanvas == null)
+                {
+                    targetCanvas = FindAnyObjectByType<Canvas>();
+                }
+            }
+
+            if (targetCanvas == null) return;
+
+#if UNITY_EDITOR
+            Sprite vigSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/vignette_gradient.png");
+            Sprite panelSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/panel_background.png");
+            Sprite trackSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/gauge_track.png");
+            Sprite fillSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Textures/UI/gauge_fill.png");
+#else
+            Sprite vigSprite = null;
+            Sprite panelSprite = null;
+            Sprite trackSprite = null;
+            Sprite fillSprite = null;
+#endif
+
+            Transform existing = targetCanvas.transform.Find("DistanceWarningHUD");
+            GameObject rootObj;
+            if (existing != null)
+            {
+                rootObj = existing.gameObject;
             }
             else
             {
-                // Amber warning blending towards orange-red as distance approaches maxDistance
-                float progress = Mathf.InverseLerp(warningDistance, maxDistance, currentDistance);
-                themeColor = Color.Lerp(MinimalIMGUI.ColorAmber, MinimalIMGUI.ColorCrimson, progress);
+                rootObj = new GameObject("DistanceWarningHUD", typeof(RectTransform), typeof(CanvasGroup));
+                rootObj.transform.SetParent(targetCanvas.transform, false);
             }
 
-            // 1. Atmospheric Boundary Screen Vignette when restrained or near boundary
-            if (showBoundaryVignette)
+            warningCanvasGroup = rootObj.GetComponent<CanvasGroup>();
+            if (warningCanvasGroup == null) warningCanvasGroup = rootObj.AddComponent<CanvasGroup>();
+            warningCanvasGroup.alpha = 0f;
+            warningCanvasGroup.blocksRaycasts = false;
+            warningCanvasGroup.interactable = false;
+
+            RectTransform rootRect = rootObj.GetComponent<RectTransform>();
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
+
+            // 1. Fullscreen Vignette Image
+            Transform vigTrans = rootObj.transform.Find("Vignette");
+            GameObject vigObj;
+            if (vigTrans != null)
             {
-                if (isRestrained)
-                {
-                    float vignetteAlpha = (0.28f + pulse * 0.32f) * bannerAlpha;
-                    MinimalIMGUI.DrawVignette(MinimalIMGUI.ColorCrimson, vignetteAlpha);
-                }
-                else
-                {
-                    float progress = Mathf.InverseLerp(warningDistance, maxDistance, currentDistance);
-                    float vignetteAlpha = (progress * 0.22f) * bannerAlpha;
-                    MinimalIMGUI.DrawVignette(MinimalIMGUI.ColorAmber, vignetteAlpha);
-                }
+                vigObj = vigTrans.gameObject;
+            }
+            else
+            {
+                vigObj = new GameObject("Vignette", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                vigObj.transform.SetParent(rootObj.transform, false);
             }
 
-            // 2. Main Alert Notification Box (Upper-Center)
-            float boxWidth = 510f;
-            float boxHeight = 78f;
-            float boxX = (screenW - boxWidth) * 0.5f;
-            // Smoothly slide down slightly as alpha increases
-            float boxY = Mathf.Lerp(16f, 32f, bannerAlpha);
-            Rect boxRect = new Rect(boxX, boxY, boxWidth, boxHeight);
+            RectTransform vigRect = vigObj.GetComponent<RectTransform>();
+            vigRect.anchorMin = Vector2.zero;
+            vigRect.anchorMax = Vector2.one;
+            vigRect.offsetMin = Vector2.zero;
+            vigRect.offsetMax = Vector2.zero;
+            vignetteOverlay = vigObj.GetComponent<UnityEngine.UI.Image>();
+            if (vigSprite != null) vignetteOverlay.sprite = vigSprite;
+            vignetteOverlay.color = new Color(0.96f, 0.28f, 0.28f, 0f);
+            vignetteOverlay.raycastTarget = false;
 
-            // Draw Background Panel with 9-slice rounded borders and top accent
-            Color currentBgColor = new Color(
-                MinimalIMGUI.ColorDarkBg.r,
-                MinimalIMGUI.ColorDarkBg.g,
-                MinimalIMGUI.ColorDarkBg.b,
-                0.93f * bannerAlpha
-            );
-            Color accentColor = new Color(themeColor.r, themeColor.g, themeColor.b, bannerAlpha);
-            MinimalIMGUI.DrawPanel(boxRect, currentBgColor, accentColor, 2.5f);
+            // 2. Alert Box (Upper Center)
+            Transform boxTrans = rootObj.transform.Find("AlertBox");
+            GameObject boxObj;
+            if (boxTrans != null)
+            {
+                boxObj = boxTrans.gameObject;
+            }
+            else
+            {
+                boxObj = new GameObject("AlertBox", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                boxObj.transform.SetParent(rootObj.transform, false);
+            }
 
-            // Coffin relative direction cue
-            string directionStr = "";
-            if (showDirectionCue && targetCoffin != null)
+            RectTransform boxRect = boxObj.GetComponent<RectTransform>();
+            boxRect.anchorMin = new Vector2(0.5f, 1f);
+            boxRect.anchorMax = new Vector2(0.5f, 1f);
+            boxRect.pivot = new Vector2(0.5f, 1f);
+            boxRect.anchoredPosition = new Vector2(0f, -32f);
+            boxRect.sizeDelta = new Vector2(510f, 78f);
+
+            var boxImg = boxObj.GetComponent<UnityEngine.UI.Image>();
+            if (panelSprite != null)
+            {
+                boxImg.sprite = panelSprite;
+                boxImg.type = UnityEngine.UI.Image.Type.Sliced;
+                boxImg.color = new Color(0.08f, 0.10f, 0.14f, 0.95f);
+            }
+            else
+            {
+                boxImg.color = new Color(0.06f, 0.08f, 0.11f, 0.94f);
+            }
+            boxImg.raycastTarget = false;
+
+            // Badge
+            Transform badgeTrans = boxObj.transform.Find("WarningBadge");
+            GameObject badgeObj = badgeTrans != null ? badgeTrans.gameObject : new GameObject("WarningBadge", typeof(RectTransform), typeof(TextMeshProUGUI));
+            badgeObj.transform.SetParent(boxObj.transform, false);
+            RectTransform bRect = badgeObj.GetComponent<RectTransform>();
+            bRect.anchorMin = new Vector2(0f, 1f);
+            bRect.anchorMax = new Vector2(0f, 1f);
+            bRect.pivot = new Vector2(0f, 1f);
+            bRect.anchoredPosition = new Vector2(16f, -10f);
+            bRect.sizeDelta = new Vector2(240f, 22f);
+            warningBadgeText = badgeObj.GetComponent<TextMeshProUGUI>();
+            warningBadgeText.text = "TETHER WARNING";
+            warningBadgeText.fontSize = 13f;
+            warningBadgeText.fontStyle = FontStyles.Bold;
+            warningBadgeText.alignment = TextAlignmentOptions.Left;
+            warningBadgeText.color = new Color(1f, 0.75f, 0.15f, 1f);
+            warningBadgeText.raycastTarget = false;
+
+            // Distance Text
+            Transform distTrans = boxObj.transform.Find("DistanceText");
+            GameObject distObj = distTrans != null ? distTrans.gameObject : new GameObject("DistanceText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            distObj.transform.SetParent(boxObj.transform, false);
+            RectTransform dRect = distObj.GetComponent<RectTransform>();
+            dRect.anchorMin = new Vector2(1f, 1f);
+            dRect.anchorMax = new Vector2(1f, 1f);
+            dRect.pivot = new Vector2(1f, 1f);
+            dRect.anchoredPosition = new Vector2(-16f, -10f);
+            dRect.sizeDelta = new Vector2(180f, 22f);
+            distanceReadoutText = distObj.GetComponent<TextMeshProUGUI>();
+            distanceReadoutText.text = "0.0m / 42m";
+            distanceReadoutText.fontSize = 14f;
+            distanceReadoutText.fontStyle = FontStyles.Bold;
+            distanceReadoutText.alignment = TextAlignmentOptions.Right;
+            distanceReadoutText.color = Color.white;
+            distanceReadoutText.raycastTarget = false;
+
+            // Tension Progress Bar
+            Transform barTrans = boxObj.transform.Find("TensionTrack");
+            GameObject barTrack = barTrans != null ? barTrans.gameObject : new GameObject("TensionTrack", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+            barTrack.transform.SetParent(boxObj.transform, false);
+            RectTransform btRect = barTrack.GetComponent<RectTransform>();
+            btRect.anchorMin = new Vector2(0f, 1f);
+            btRect.anchorMax = new Vector2(1f, 1f);
+            btRect.pivot = new Vector2(0.5f, 1f);
+            btRect.anchoredPosition = new Vector2(0f, -36f);
+            btRect.sizeDelta = new Vector2(-32f, 6f);
+            var trackImg = barTrack.GetComponent<UnityEngine.UI.Image>();
+            if (trackSprite != null)
+            {
+                trackImg.sprite = trackSprite;
+                trackImg.type = UnityEngine.UI.Image.Type.Sliced;
+                trackImg.color = new Color(0.06f, 0.08f, 0.12f, 0.95f);
+            }
+            else
+            {
+                trackImg.color = new Color(0.08f, 0.10f, 0.14f, 0.9f);
+            }
+            trackImg.raycastTarget = false;
+
+            Transform fillTrans = barTrack.transform.Find("TensionFill");
+            GameObject fillObj = fillTrans != null ? fillTrans.gameObject : new GameObject("TensionFill", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+            fillObj.transform.SetParent(barTrack.transform, false);
+            RectTransform fRect = fillObj.GetComponent<RectTransform>();
+            fRect.anchorMin = Vector2.zero;
+            fRect.anchorMax = Vector2.one;
+            fRect.sizeDelta = Vector2.zero;
+            warningBarFill = fillObj.GetComponent<UnityEngine.UI.Image>();
+            if (fillSprite != null) warningBarFill.sprite = fillSprite;
+            warningBarFill.type = UnityEngine.UI.Image.Type.Filled;
+            warningBarFill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+            warningBarFill.fillOrigin = (int)UnityEngine.UI.Image.OriginHorizontal.Left;
+            warningBarFill.fillAmount = 0.5f;
+            warningBarFill.color = new Color(1f, 0.75f, 0.15f, 1f);
+            warningBarFill.raycastTarget = false;
+
+            // Subtitle instruction
+            Transform subTrans = boxObj.transform.Find("SubText");
+            GameObject subObj = subTrans != null ? subTrans.gameObject : new GameObject("SubText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            subObj.transform.SetParent(boxObj.transform, false);
+            RectTransform sRect = subObj.GetComponent<RectTransform>();
+            sRect.anchorMin = new Vector2(0f, 0f);
+            sRect.anchorMax = new Vector2(0.7f, 0f);
+            sRect.pivot = new Vector2(0f, 0f);
+            sRect.anchoredPosition = new Vector2(16f, 10f);
+            sRect.sizeDelta = new Vector2(0f, 20f);
+            subInstructionText = subObj.GetComponent<TextMeshProUGUI>();
+            subInstructionText.text = warningSubText;
+            subInstructionText.fontSize = 12f;
+            subInstructionText.alignment = TextAlignmentOptions.Left;
+            subInstructionText.color = new Color(0.85f, 0.88f, 0.92f, 1f);
+            subInstructionText.raycastTarget = false;
+
+            // Direction cue text
+            Transform dirTrans = boxObj.transform.Find("DirectionCue");
+            GameObject dirObj = dirTrans != null ? dirTrans.gameObject : new GameObject("DirectionCue", typeof(RectTransform), typeof(TextMeshProUGUI));
+            dirObj.transform.SetParent(boxObj.transform, false);
+            RectTransform dirRect = dirObj.GetComponent<RectTransform>();
+            dirRect.anchorMin = new Vector2(0.7f, 0f);
+            dirRect.anchorMax = new Vector2(1f, 0f);
+            dirRect.pivot = new Vector2(1f, 0f);
+            dirRect.anchoredPosition = new Vector2(-16f, 10f);
+            dirRect.sizeDelta = new Vector2(0f, 20f);
+            directionCueText = dirObj.GetComponent<TextMeshProUGUI>();
+            directionCueText.text = "";
+            directionCueText.fontSize = 11f;
+            directionCueText.fontStyle = FontStyles.Bold;
+            directionCueText.alignment = TextAlignmentOptions.Right;
+            directionCueText.color = new Color(1f, 0.75f, 0.15f, 1f);
+            directionCueText.raycastTarget = false;
+        }
+
+        private void UpdateCanvasUI()
+        {
+            if (warningCanvasGroup == null)
+            {
+                EnsureUIHierarchy();
+                if (warningCanvasGroup == null) return;
+            }
+
+            warningCanvasGroup.alpha = bannerAlpha;
+            if (bannerAlpha <= 0.005f) return;
+
+            // Pulsation animation
+            float pulseFrequency = isRestrained ? 8f : Mathf.Lerp(3f, 6.5f, Mathf.InverseLerp(warningDistance, maxDistance, currentDistance));
+            float pulse = (Mathf.Sin(Time.time * pulseFrequency) + 1f) * 0.5f;
+
+            Color themeColor;
+            Color crimson = new Color(0.96f, 0.28f, 0.28f, 1f);
+            Color amber = new Color(1f, 0.75f, 0.15f, 1f);
+
+            if (isRestrained)
+            {
+                themeColor = Color.Lerp(crimson, new Color(1f, 0.85f, 0.85f), pulse * 0.5f);
+            }
+            else
+            {
+                float progress = Mathf.InverseLerp(warningDistance, maxDistance, currentDistance);
+                themeColor = Color.Lerp(amber, crimson, progress);
+            }
+
+            if (vignetteOverlay != null && showBoundaryVignette)
+            {
+                float vigAlpha = isRestrained
+                    ? (0.28f + pulse * 0.32f) * bannerAlpha
+                    : (Mathf.InverseLerp(warningDistance, maxDistance, currentDistance) * 0.22f) * bannerAlpha;
+
+                vignetteOverlay.color = new Color(themeColor.r, themeColor.g, themeColor.b, vigAlpha);
+            }
+
+            if (warningBadgeText != null)
+            {
+                warningBadgeText.text = isRestrained ? "TETHER LIMIT REACHED" : "TETHER WARNING";
+                warningBadgeText.color = themeColor;
+            }
+
+            if (distanceReadoutText != null)
+            {
+                distanceReadoutText.text = $"{currentDistance:F1}m / {maxDistance:F0}m";
+            }
+
+            if (warningBarFill != null && showDistanceMeter)
+            {
+                float ratio = Mathf.Clamp01(currentDistance / maxDistance);
+                warningBarFill.fillAmount = ratio;
+                warningBarFill.color = themeColor;
+            }
+
+            if (subInstructionText != null)
+            {
+                subInstructionText.text = isRestrained ? boundarySubText : warningSubText;
+                subInstructionText.color = isRestrained ? new Color(1f, 0.5f, 0.5f, 1f) : new Color(0.85f, 0.88f, 0.92f, 1f);
+            }
+
+            if (directionCueText != null && showDirectionCue && targetCoffin != null)
             {
                 Camera cam = playerCamera != null ? playerCamera : Camera.main;
-                directionStr = GetCoffinDirectionString(cam, targetCoffin.transform.position);
-            }
-
-            // Row 1: Left Warning Badge | Right Distance Readout
-            float row1Y = boxY + 11f;
-            Rect badgeRect = new Rect(boxX + 14f, row1Y, isRestrained ? 200f : 170f, 22f);
-            string badgeText = isRestrained ? "TETHER LIMIT REACHED" : "TETHER WARNING";
-            MinimalIMGUI.DrawStatusBadge(badgeRect, badgeText, themeColor, bannerAlpha);
-
-            // Right Distance Readout
-            Rect distValRect = new Rect(boxX + boxWidth - 170f, row1Y, 156f, 22f);
-            MinimalIMGUI.ValueStyle.fontSize = 14;
-            MinimalIMGUI.ValueStyle.normal.textColor = new Color(0.95f, 0.95f, 0.95f, bannerAlpha);
-            GUI.Label(distValRect, $"{currentDistance:F1}m / {maxDistance:F0}m", MinimalIMGUI.ValueStyle);
-
-            // Row 2: Precision Tether Tension Meter
-            float row2Y = boxY + 38f;
-            if (showDistanceMeter)
-            {
-                float meterW = boxWidth - 28f;
-                Rect meterRect = new Rect(boxX + 14f, row2Y, meterW, 6f);
-                float tensionRatio = Mathf.Clamp01(currentDistance / maxDistance);
-                MinimalIMGUI.DrawProgressBar(meterRect, tensionRatio, themeColor, new Color(0.08f, 0.10f, 0.14f, 0.9f), bannerAlpha);
-            }
-
-            // Row 3: Subtitle Instruction (Left) | Direction Badge (Right)
-            float row3Y = boxY + 49f;
-            string subText = isRestrained ? boundarySubText : warningSubText;
-            Color subTextColor = isRestrained
-                ? new Color(1f, 0.45f, 0.45f, bannerAlpha)
-                : new Color(0.85f, 0.88f, 0.92f, bannerAlpha);
-
-            MinimalIMGUI.SubHeaderStyle.normal.textColor = subTextColor;
-            Rect subRect = new Rect(boxX + 14f, row3Y, boxWidth - (string.IsNullOrEmpty(directionStr) ? 28f : 170f), 20f);
-            GUI.Label(subRect, subText, MinimalIMGUI.SubHeaderStyle);
-
-            if (!string.IsNullOrEmpty(directionStr))
-            {
-                Rect dirRect = new Rect(boxX + boxWidth - 160f, row3Y, 146f, 20f);
-                MinimalIMGUI.ValueStyle.fontSize = 11;
-                MinimalIMGUI.ValueStyle.normal.textColor = new Color(MinimalIMGUI.ColorAmber.r, MinimalIMGUI.ColorAmber.g, MinimalIMGUI.ColorAmber.b, bannerAlpha);
-                GUI.Label(dirRect, $"COFFIN: {directionStr}", MinimalIMGUI.ValueStyle);
+                string dirStr = GetCoffinDirectionString(cam, targetCoffin.transform.position);
+                directionCueText.text = string.IsNullOrEmpty(dirStr) ? "" : $"COFFIN: {dirStr}";
             }
         }
 

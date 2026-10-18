@@ -31,6 +31,29 @@ namespace FirstPersonSystem
         [SerializeField] private GameObject anchorPrefab;
         [SerializeField] private Transform ropeHandHolder;
 
+        [Header("Anchor Detection")]
+        [Tooltip("Maximum raycast distance for targeting anchorable objects (trees).")]
+        [SerializeField] private float anchorPlacementDistance = 8.5f;
+
+        [Header("Audio Feedback")]
+        [Tooltip("Audio clip played while winching/pulling the coffin.")]
+        [SerializeField] private AudioClip pullAudioClip;
+        [Tooltip("Audio source used for winch pulling sound. If not assigned, a dedicated child audio source will be created automatically.")]
+        [SerializeField] private AudioSource pullAudioSource;
+        [Tooltip("Target audio volume for the winch pull sound.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float pullAudioVolume = 0.8f;
+        [Tooltip("Base pitch when low or minimal force is applied.")]
+        [Range(0.5f, 2f)]
+        [SerializeField] private float minPitch = 0.95f;
+        [Tooltip("Maximum pitch when high pulling force is applied.")]
+        [Range(0.5f, 2f)]
+        [SerializeField] private float maxPitch = 1.18f;
+        [Tooltip("Speed at which the pitch smoothly tracks applied force.")]
+        [SerializeField] private float pitchSmoothSpeed = 4f;
+        [Tooltip("Speed of audio volume fade-in and fade-out.")]
+        [SerializeField] private float audioFadeSpeed = 12f;
+
         // Dependencies
         private FirstPersonController controller;
         private Interactor interactor;
@@ -45,9 +68,11 @@ namespace FirstPersonSystem
         private CoffinPullable currentCoffin;
         private float currentRopeLength;
         private bool isWinching = false;
+        private bool isPullAudioPlaying = false;
         private float attachCooldown = 0f;
         private float currentAppliedPullForce = 0f;
         private bool isAimingAtAnchorable = false;
+        private RaycastHit lastAnchorHit;
 
         public WinchState CurrentState => currentState;
         public bool IsCarryingRope => currentState == WinchState.CarryingRope;
@@ -56,9 +81,20 @@ namespace FirstPersonSystem
         public float MaxRopeLength => maxRopeLength;
         public bool IsWinching => isWinching;
         public bool IsAimingAtAnchorable => isAimingAtAnchorable;
+        public RaycastHit LastAnchorHit => lastAnchorHit;
+        public float AnchorPlacementDistance => anchorPlacementDistance;
         public CoffinDistanceWarningSystem CoffinWarningSystem => coffinWarningSystem;
+        public float CurrentAppliedPullForce => currentAppliedPullForce;
+        public AudioSource PullAudioSource => pullAudioSource;
+        public AudioClip PullAudioClip => pullAudioClip;
+        public float PullAudioVolume => pullAudioVolume;
+        public float MinPitch => minPitch;
+        public float MaxPitch => maxPitch;
+        public bool IsPullAudioPlaying => isPullAudioPlaying;
 
         public event Action<WinchState> OnWinchStateChanged;
+        public static event Action<AnchorPoint> OnAnyAnchorPlaced;
+        public event Action<AnchorPoint> OnAnchorPlaced;
 
         private void Awake()
         {
@@ -108,6 +144,8 @@ namespace FirstPersonSystem
                     ropeHandHolder = transform;
                 }
             }
+
+            SetupPullAudio();
         }
 
         private void Update()
@@ -133,6 +171,8 @@ namespace FirstPersonSystem
                     HandleRiggedInput();
                     break;
             }
+
+            UpdatePullAudio();
         }
 
         private void FixedUpdate()
@@ -146,13 +186,21 @@ namespace FirstPersonSystem
         private void HandleIdleState()
         {
             isAimingAtAnchorable = false;
-            if (interactor == null || interactor.Cam == null) return;
+            lastAnchorHit = default;
 
-            Ray ray = interactor.Cam.ViewportPointToRay(interactor.InteractionRayPoint);
-            if (Physics.Raycast(ray, out RaycastHit hit, interactor.InteractionDistance, anchorableLayer))
+            Camera cam = interactor != null && interactor.Cam != null ? interactor.Cam : Camera.main;
+            if (cam == null) cam = GetComponentInChildren<Camera>();
+            if (cam == null) return;
+
+            Vector3 rayPoint = interactor != null ? interactor.InteractionRayPoint : new Vector3(0.5f, 0.5f, 0f);
+            Ray ray = cam.ViewportPointToRay(rayPoint);
+            float checkDist = Mathf.Max(anchorPlacementDistance, interactor != null ? interactor.InteractionDistance : 3.0f);
+
+            if (Physics.Raycast(ray, out RaycastHit hit, checkDist, anchorableLayer))
             {
                 isAimingAtAnchorable = true;
-                if (input.GetInput_Interacted())
+                lastAnchorHit = hit;
+                if (input != null && input.GetInput_Interacted())
                 {
                     PlaceAnchor(hit.point, hit.normal, hit.collider.transform);
                 }
@@ -191,6 +239,8 @@ namespace FirstPersonSystem
 
             currentState = WinchState.CarryingRope;
             OnWinchStateChanged?.Invoke(currentState);
+            OnAnchorPlaced?.Invoke(currentAnchor);
+            OnAnyAnchorPlaced?.Invoke(currentAnchor);
             Debug.Log("[WinchSystem] Anchor placed. Carrying stiff winch cable.");
         }
 
@@ -221,6 +271,27 @@ namespace FirstPersonSystem
                 {
                     controller.ApplyExternalDisplacement(pullDir * overshoot);
                     controller.AddExternalForce(pullDir * (overshoot * 200f + 15f));
+                }
+            }
+
+            // Direct click-to-attach coffin if looking at coffin within 5.5m
+            if (input != null && input.GetInput_Interacted())
+            {
+                Camera cam = interactor != null && interactor.Cam != null ? interactor.Cam : Camera.main;
+                if (cam == null) cam = GetComponentInChildren<Camera>();
+                if (cam != null)
+                {
+                    Vector3 rayPoint = interactor != null ? interactor.InteractionRayPoint : new Vector3(0.5f, 0.5f, 0f);
+                    Ray ray = cam.ViewportPointToRay(rayPoint);
+                    if (Physics.Raycast(ray, out RaycastHit hit, 5.5f))
+                    {
+                        CoffinPullable coffin = hit.collider.GetComponentInParent<CoffinPullable>();
+                        if (coffin != null)
+                        {
+                            Transform closestHook = coffin.GetClosestHookPoint(hit.point);
+                            AttachRopeToCoffin(coffin, closestHook);
+                        }
+                    }
                 }
             }
         }
@@ -360,11 +431,161 @@ namespace FirstPersonSystem
             currentAppliedPullForce = 0f;
             attachCooldown = 0f;
             currentState = WinchState.Idle;
+            StopPullAudioImmediate();
             OnWinchStateChanged?.Invoke(currentState);
         }
 
+        public void SetupPullAudio()
+        {
+            if (pullAudioSource == null)
+            {
+                Transform child = transform.Find("WinchAudioSource");
+                if (child != null)
+                {
+                    pullAudioSource = child.GetComponent<AudioSource>();
+                }
+
+                if (pullAudioSource == null)
+                {
+                    GameObject audioObj = new GameObject("WinchAudioSource");
+                    audioObj.transform.SetParent(transform, false);
+                    pullAudioSource = audioObj.AddComponent<AudioSource>();
+                }
+            }
+
+            pullAudioSource.playOnAwake = false;
+            pullAudioSource.loop = true;
+            pullAudioSource.spatialBlend = 0f;
+            pullAudioSource.volume = 0f;
+            pullAudioSource.pitch = minPitch;
+
+#if UNITY_EDITOR
+            if (pullAudioClip == null)
+            {
+                pullAudioClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/motor_rope_pulling_s_#1-1792331422309.mp3");
+            }
+#endif
+
+            if (pullAudioClip != null)
+            {
+                pullAudioSource.clip = pullAudioClip;
+            }
+        }
+
+        public void UpdatePullAudio(float deltaTime = -1f)
+        {
+            if (pullAudioSource == null)
+            {
+                SetupPullAudio();
+            }
+            if (pullAudioSource == null) return;
+
+            float dt = deltaTime >= 0f ? deltaTime : Time.deltaTime;
+
+            if (pullAudioSource.clip == null && pullAudioClip != null)
+            {
+                pullAudioSource.clip = pullAudioClip;
+            }
+
+            bool shouldPlay = isWinching && currentState == WinchState.WinchRigged && currentCoffin != null && pullAudioClip != null;
+
+            if (shouldPlay)
+            {
+                if (!isPullAudioPlaying)
+                {
+                    isPullAudioPlaying = true;
+                    if (!pullAudioSource.isPlaying)
+                    {
+                        pullAudioSource.Play();
+                    }
+                }
+
+                pullAudioSource.volume = Mathf.MoveTowards(pullAudioSource.volume, pullAudioVolume, audioFadeSpeed * dt);
+
+                float forceRatio = Mathf.Clamp01(currentAppliedPullForce / Mathf.Max(1f, maxPullForce));
+                float targetPitch = Mathf.Lerp(minPitch, maxPitch, forceRatio);
+                pullAudioSource.pitch = Mathf.MoveTowards(pullAudioSource.pitch, targetPitch, pitchSmoothSpeed * dt);
+            }
+            else
+            {
+                if (isPullAudioPlaying)
+                {
+                    pullAudioSource.volume = Mathf.MoveTowards(pullAudioSource.volume, 0f, audioFadeSpeed * dt);
+                    if (pullAudioSource.volume <= 0.001f)
+                    {
+                        if (pullAudioSource.isPlaying)
+                        {
+                            pullAudioSource.Stop();
+                        }
+                        pullAudioSource.pitch = minPitch;
+                        isPullAudioPlaying = false;
+                    }
+                }
+            }
+        }
+
+        public void StopPullAudioImmediate()
+        {
+            isPullAudioPlaying = false;
+            if (pullAudioSource != null)
+            {
+                if (pullAudioSource.isPlaying)
+                {
+                    pullAudioSource.Stop();
+                }
+                pullAudioSource.volume = 0f;
+                pullAudioSource.pitch = minPitch;
+            }
+        }
+
+        public void SetPullAudioClip(AudioClip clip)
+        {
+            pullAudioClip = clip;
+            if (pullAudioSource != null)
+            {
+                pullAudioSource.clip = clip;
+            }
+        }
+
+        public void SetPullAudioSource(AudioSource source)
+        {
+            pullAudioSource = source;
+        }
+
+        public void SetPitchRange(float min, float max)
+        {
+            minPitch = min;
+            maxPitch = max;
+        }
+
+        public void SetTestWinchState(WinchState state, CoffinPullable coffin, bool winching, float appliedForce)
+        {
+            currentState = state;
+            currentCoffin = coffin;
+            isWinching = winching;
+            currentAppliedPullForce = appliedForce;
+        }
+
+        private void OnDisable()
+        {
+            StopPullAudioImmediate();
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (pullAudioClip == null)
+            {
+                pullAudioClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/motor_rope_pulling_s_#1-1792331422309.mp3");
+            }
+            if (minPitch < 0.1f) minPitch = 0.1f;
+            if (maxPitch < minPitch) maxPitch = minPitch;
+        }
+#endif
+
         private void OnDestroy()
         {
+            StopPullAudioImmediate();
             if (Instance == this) Instance = null;
         }
     }

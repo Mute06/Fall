@@ -1,19 +1,25 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FirstPersonSystem.Narrative;
+using FirstPersonSystem.SceneManagement;
 
 namespace FirstPersonSystem.ProceduralGeneration
 {
     [ExecuteAlways]
     public class ProceduralMountainGenerator : MonoBehaviour
     {
+        public static event Action<ProceduralMountainGenerator> OnGenerationStarted;
+        public static event Action<ProceduralMountainGenerator> OnGenerationCompleted;
+
         [Header("Configuration Profile")]
         [Tooltip("Configurable ScriptableObject profile containing all terrain, path, slope, and asset settings. If left null, a default in-memory profile will be used.")]
         [SerializeField] private MountainGenerationProfile profile;
 
         [Header("Seed & Generation Trigger")]
         [SerializeField] private int seed = 1337;
-        [SerializeField] private bool randomizeSeedOnStart = false;
+        [SerializeField] private bool randomizeSeedOnStart = true;
         [SerializeField] private bool generateOnStart = true;
 
         [Header("Target Terrain & Actors")]
@@ -32,7 +38,7 @@ namespace FirstPersonSystem.ProceduralGeneration
         [SerializeField] private Vector3 playerStartOffset = new Vector3(-1.5f, 1.15f, 2f);
         [SerializeField] private Vector3 coffinStartOffset = new Vector3(1.5f, 0.6f, 3.5f);
         [SerializeField] private Vector3 cabinStartOffset = new Vector3(-8.5f, 0f, 1f);
-        [SerializeField] private Vector3 cabinRotationEuler = new Vector3(0f, -90f, 0f);
+        [SerializeField] private Vector3 cabinRotationEuler = new Vector3(0f, -270f, 0f);
         [SerializeField] private float cabinFootprintRadius = 7.5f;
         [SerializeField] private bool repositionActorsOnGenerate = true;
 
@@ -52,6 +58,8 @@ namespace FirstPersonSystem.ProceduralGeneration
         private GoldenPathGenerator pathGenerator = new GoldenPathGenerator();
         private SpatialOccupancyGrid occupancyGrid = new SpatialOccupancyGrid(4f);
         private Transform generatedRoot;
+        private bool isGenerating = false;
+        private bool isGenerationCompleted = false;
 
         public MountainGenerationProfile Profile => profile;
         public int Seed
@@ -61,18 +69,37 @@ namespace FirstPersonSystem.ProceduralGeneration
         }
         public IReadOnlyList<GoldenPathNode> GoldenPathNodes => pathGenerator?.Nodes;
         public IReadOnlyList<SafePlateauZone> SafeZones => pathGenerator?.SafeZones;
+        public bool IsGenerating => isGenerating;
+        public bool IsGenerationCompleted => isGenerationCompleted;
 
-        private void Start()
+        private void Awake()
         {
             if (!Application.isPlaying) return;
 
-            if (generateOnStart)
+            if (generateOnStart && !isGenerationCompleted)
             {
+                LoadingScreenManager.Show();
+            }
+        }
+
+        private IEnumerator Start()
+        {
+            if (!Application.isPlaying) yield break;
+
+            if (generateOnStart && !isGenerationCompleted)
+            {
+                LoadingScreenManager.Show();
+
                 if (randomizeSeedOnStart)
                 {
                     seed = UnityEngine.Random.Range(1, 999999);
                 }
                 GenerateMountain();
+
+                yield return null;
+                yield return new WaitForEndOfFrame();
+
+                LoadingScreenManager.Hide();
             }
         }
 
@@ -83,78 +110,103 @@ namespace FirstPersonSystem.ProceduralGeneration
         [ContextMenu("Generate Mountain")]
         public void GenerateMountain()
         {
-            MountainGenerationProfile activeProfile = GetOrCreateActiveProfile();
+            isGenerating = true;
+            OnGenerationStarted?.Invoke(this);
 
-            ClearSpawnedObjects();
-            EnsureTerrainSetup(activeProfile, out TerrainData terrainData, out Vector3 terrainOrigin);
-
-            // Stage 1: Golden Path (Random Walk with Momentum from (0,0) to (0,250) stepping 8-12m)
-            pathGenerator.Generate(activeProfile, seed);
-
-            // Stage 2 & 3: Stepped Longitudinal Elevation + 2D Heightmap Synthesis + Path Carving (with natural edges)
-            SynthesizeHeightmap(activeProfile, terrainData, terrainOrigin, seed);
-
-            // Stage 4: Splatmap Painting (Grass default ground + optional Rock/Path layers)
-            ApplyTerrainTextures(activeProfile, terrainData, terrainOrigin);
-
-            // Prepare container hierarchy for spawned objects
-            CreateSpawnContainers(
-                out Transform anchorsParent,
-                out Transform denseForestParent,
-                out Transform hazardsParent,
-                out Transform decorParent,
-                out Transform boundariesParent,
-                out Transform backdropsParent);
-
-            occupancyGrid.Clear();
-
-            // Reserve spawn clearance at Player & Coffin start area
-            Vector2 playerAreaXZ = activeProfile.pathStartXZ + new Vector2(0f, 2.5f);
-            occupancyGrid.Register(playerAreaXZ, 5.5f);
-
-            // Reserve cabin footprint so trees/rocks do not spawn inside the cabin
-            Vector2 cabinSpawnXZ = activeProfile.pathStartXZ + new Vector2(cabinStartOffset.x, cabinStartOffset.z);
-            occupancyGrid.Register(cabinSpawnXZ, cabinFootprintRadius);
-
-            // Stage 5: Guaranteed-Solvable Anchor Spawning along Golden Path nodes
-            // Uses a random tree and random rock from the shared treePrefabs & rockPrefabs pools
-            int anchorCount = SpawnGoldenPathAnchors(activeProfile, anchorsParent, seed + 101);
-
-            // Stage 6A: Dense Forest Spawning
-            // Fills the mountain with a dense forest of trees using the multiple treePrefabs
-            int forestTreeCount = 0;
-            if (activeProfile.enableDenseForest)
+            try
             {
-                forestTreeCount = SpawnDenseForest(activeProfile, denseForestParent, seed + 202);
+                MountainGenerationProfile activeProfile = GetOrCreateActiveProfile();
+
+                ClearSpawnedObjects();
+                EnsureTerrainSetup(activeProfile, out TerrainData terrainData, out Vector3 terrainOrigin);
+
+                // Stage 1: Golden Path (Random Walk with Momentum from (0,0) to (0,250) stepping 8-12m)
+                pathGenerator.Generate(activeProfile, seed);
+
+                // Stage 2 & 3: Stepped Longitudinal Elevation + 2D Heightmap Synthesis + Path Carving (with natural edges)
+                SynthesizeHeightmap(activeProfile, terrainData, terrainOrigin, seed);
+
+                // Stage 4: Splatmap Painting (Grass default ground + optional Rock/Path layers)
+                ApplyTerrainTextures(activeProfile, terrainData, terrainOrigin);
+
+                // Prepare container hierarchy for spawned objects
+                CreateSpawnContainers(
+                    out Transform anchorsParent,
+                    out Transform denseForestParent,
+                    out Transform hazardsParent,
+                    out Transform decorParent,
+                    out Transform boundariesParent,
+                    out Transform backdropsParent);
+
+                occupancyGrid.Clear();
+
+                // Reserve spawn clearance at Player & Coffin start area
+                Vector2 playerAreaXZ = activeProfile.pathStartXZ + new Vector2(0f, 2.5f);
+                occupancyGrid.Register(playerAreaXZ, 5.5f);
+
+                // Reserve cabin footprint so trees/rocks do not spawn inside the cabin
+                Vector2 cabinSpawnXZ = activeProfile.pathStartXZ + new Vector2(cabinStartOffset.x, cabinStartOffset.z);
+                occupancyGrid.Register(cabinSpawnXZ, cabinFootprintRadius);
+
+                // Reserve grave hole area at the summit so trees/rocks do not spawn inside or around the hole
+                if (activeProfile.enableSummitGraveHole)
+                {
+                    Vector2 graveSpawnXZ = activeProfile.pathEndXZ + activeProfile.graveHoleOffset;
+                    occupancyGrid.Register(graveSpawnXZ, 6.0f);
+                }
+
+                // Stage 5: Guaranteed-Solvable Anchor Spawning along Golden Path nodes
+                // Uses a random tree and random rock from the shared treePrefabs & rockPrefabs pools
+                int anchorCount = SpawnGoldenPathAnchors(activeProfile, anchorsParent, seed + 101);
+
+                // Stage 6A: Dense Forest Spawning
+                // Fills the mountain with a dense forest of trees using the multiple treePrefabs
+                int forestTreeCount = 0;
+                if (activeProfile.enableDenseForest)
+                {
+                    forestTreeCount = SpawnDenseForest(activeProfile, denseForestParent, seed + 202);
+                }
+
+                // Stage 6B: Slope Hazards & Rocks
+                // Slope < 20°: Leaf piles & deadfall logs
+                // Slope > 38°: Jagged rocks from rockPrefabs and loose scree zones
+                int hazardCount = SpawnSlopeHazardsAndRocks(activeProfile, hazardsParent, seed + 303);
+
+                // Stage 6C: Decorative Small Objects Scatter (Small Rocks, Bushes, etc.)
+                int decorCount = SpawnDecorativeObjects(activeProfile, decorParent, seed + 404);
+
+                // Stage 7: Invisible Boundary Colliders (North, South, East, West)
+                if (activeProfile.spawnInvisibleBoundaries)
+                {
+                    SpawnInvisibleBoundaryColliders(activeProfile, boundariesParent);
+                }
+
+                // Stage 8: Distant Mountain Vista Backdrops (2.5D concentric backdrop rings)
+                if (activeProfile.enableMountainBackdrops)
+                {
+                    SpawnMountainBackdrops(activeProfile, backdropsParent, terrainOrigin, terrainData.size);
+                }
+
+                // Setup Summit Resting Marker & Grave Hole Trigger Area
+                if (activeProfile.enableSummitGraveHole)
+                {
+                    SetupSummitGraveMarker(activeProfile);
+                }
+
+                // Position Player & Coffin on the starting flat zone if requested
+                if (repositionActorsOnGenerate)
+                {
+                    PositionStartingActors(activeProfile);
+                }
+
+                Debug.Log($"[ProceduralMountainGenerator] Mountain generated (Seed: {seed}, Elev: {activeProfile.targetElevationGain}m, Path Nodes: {pathGenerator.Nodes.Count}, Path Anchors: {anchorCount}, Forest Trees: {forestTreeCount}, Slope Hazards/Rocks: {hazardCount}, Props: {decorCount}).");
             }
-
-            // Stage 6B: Slope Hazards & Rocks
-            // Slope < 20°: Leaf piles & deadfall logs
-            // Slope > 38°: Jagged rocks from rockPrefabs and loose scree zones
-            int hazardCount = SpawnSlopeHazardsAndRocks(activeProfile, hazardsParent, seed + 303);
-
-            // Stage 6C: Decorative Small Objects Scatter (Small Rocks, Bushes, etc.)
-            int decorCount = SpawnDecorativeObjects(activeProfile, decorParent, seed + 404);
-
-            // Stage 7: Invisible Boundary Colliders (North, South, East, West)
-            if (activeProfile.spawnInvisibleBoundaries)
+            finally
             {
-                SpawnInvisibleBoundaryColliders(activeProfile, boundariesParent);
+                isGenerating = false;
+                isGenerationCompleted = true;
+                OnGenerationCompleted?.Invoke(this);
             }
-
-            // Stage 8: Distant Mountain Vista Backdrops (2.5D concentric backdrop rings)
-            if (activeProfile.enableMountainBackdrops)
-            {
-                SpawnMountainBackdrops(activeProfile, backdropsParent, terrainOrigin, terrainData.size);
-            }
-
-            // Position Player & Coffin on the starting flat zone if requested
-            if (repositionActorsOnGenerate)
-            {
-                PositionStartingActors(activeProfile);
-            }
-
-            Debug.Log($"[ProceduralMountainGenerator] Mountain generated (Seed: {seed}, Elev: {activeProfile.targetElevationGain}m, Path Nodes: {pathGenerator.Nodes.Count}, Path Anchors: {anchorCount}, Forest Trees: {forestTreeCount}, Slope Hazards/Rocks: {hazardCount}, Props: {decorCount}).");
         }
 
         [ContextMenu("Randomize Seed & Generate")]
@@ -162,6 +214,11 @@ namespace FirstPersonSystem.ProceduralGeneration
         {
             seed = UnityEngine.Random.Range(1, 999999);
             GenerateMountain();
+        }
+
+        public void GenerateWithRandomSeed()
+        {
+            RandomizeSeedAndGenerate();
         }
 
         [ContextMenu("Clear Spawned Objects")]
@@ -366,11 +423,52 @@ namespace FirstPersonSystem.ProceduralGeneration
                     }
 
                     float finalWorldHeight = Mathf.Max(0f, carvedHeight + cliffRise);
+
+                    // 5. Carve Summit Grave Hole at end of Golden Path in final flat safe area
+                    if (cfg.enableSummitGraveHole)
+                    {
+                        Vector2 graveCenter = cfg.pathEndXZ + cfg.graveHoleOffset;
+                        float holeDepression = ComputeGraveHoleDepression(worldX, worldZ, graveCenter, cfg.graveHoleSize, cfg.graveHoleDepth, cfg.graveHoleBlendMargin);
+                        finalWorldHeight = Mathf.Max(0f, finalWorldHeight - holeDepression);
+                    }
+
                     heights[zIdx, xIdx] = Mathf.Clamp01(finalWorldHeight / maxH);
                 }
             }
 
             terrainData.SetHeights(0, 0, heights);
+        }
+
+        private float ComputeGraveHoleDepression(
+            float worldX,
+            float worldZ,
+            Vector2 graveCenter,
+            Vector2 holeSize,
+            float depth,
+            float blendMargin)
+        {
+            float halfW = Mathf.Max(0.2f, holeSize.x * 0.5f);
+            float halfL = Mathf.Max(0.2f, holeSize.y * 0.5f);
+            float innerHalfW = Mathf.Max(0.05f, halfW - blendMargin);
+            float innerHalfL = Mathf.Max(0.05f, halfL - blendMargin);
+
+            float dx = Mathf.Max(0f, Mathf.Abs(worldX - graveCenter.x) - innerHalfW);
+            float dz = Mathf.Max(0f, Mathf.Abs(worldZ - graveCenter.y) - innerHalfL);
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+
+            if (dist <= 0.0001f)
+            {
+                return depth;
+            }
+
+            if (dist < blendMargin)
+            {
+                float t = Mathf.Clamp01(dist / blendMargin);
+                float smooth = 1f - t * t * (3f - 2f * t);
+                return depth * smooth;
+            }
+
+            return 0f;
         }
 
         private float ComputeBoundaryCliffHeight(
@@ -514,6 +612,20 @@ namespace FirstPersonSystem.ProceduralGeneration
                             float u = (distToPath - innerR) / blendDist;
                             float smooth = 1f - (u * u * (3f - 2f * u));
                             pathWeight = smooth * pathOpacity;
+                        }
+
+                        // Also paint earthy dirt texture inside and around the summit grave hole
+                        if (cfg.enableSummitGraveHole)
+                        {
+                            Vector2 graveCenter = cfg.pathEndXZ + cfg.graveHoleOffset;
+                            float distGrave = Vector2.Distance(new Vector2(worldX, worldZ), graveCenter);
+                            float graveRadius = Mathf.Max(cfg.graveHoleSize.x, cfg.graveHoleSize.y) * 0.75f;
+                            if (distGrave < graveRadius)
+                            {
+                                float t = distGrave / graveRadius;
+                                float graveBlend = 1f - t * t;
+                                pathWeight = Mathf.Max(pathWeight, graveBlend * pathOpacity);
+                            }
                         }
                     }
 
@@ -1463,6 +1575,42 @@ namespace FirstPersonSystem.ProceduralGeneration
                         new Vector3(cfg.playableWidth, wallH, lengthZ));
                 }
             }
+
+            if (profile != null && profile.enableSummitGraveHole)
+            {
+                Gizmos.color = new Color(0.9f, 0.55f, 0.15f, 0.85f);
+                Vector2 graveCenter = profile.pathEndXZ + profile.graveHoleOffset;
+                float graveY = targetTerrain != null ? targetTerrain.SampleHeight(new Vector3(graveCenter.x, 0f, graveCenter.y)) + targetTerrain.transform.position.y : profile.targetElevationGain;
+                Vector3 center = new Vector3(graveCenter.x, graveY + profile.graveHoleDepth * 0.5f, graveCenter.y);
+                Gizmos.DrawWireCube(center, new Vector3(profile.graveHoleSize.x, profile.graveHoleDepth + 1.2f, profile.graveHoleSize.y));
+            }
+        }
+
+        private void SetupSummitGraveMarker(MountainGenerationProfile cfg)
+        {
+            Vector2 graveCenterXZ = cfg.pathEndXZ + cfg.graveHoleOffset;
+            float sampledY = 0f;
+            if (targetTerrain != null)
+            {
+                sampledY = targetTerrain.SampleHeight(new Vector3(graveCenterXZ.x, 0f, graveCenterXZ.y)) + targetTerrain.transform.position.y;
+            }
+            else
+            {
+                sampledY = cfg.targetElevationGain;
+            }
+
+            Vector3 markerPos = new Vector3(graveCenterXZ.x, sampledY + 0.1f, graveCenterXZ.y);
+
+            SummitRestingMarker marker = FindAnyObjectByType<SummitRestingMarker>();
+            if (marker == null)
+            {
+                GameObject markerObj = new GameObject("SummitRestingMarker");
+                marker = markerObj.AddComponent<SummitRestingMarker>();
+            }
+
+            marker.transform.position = markerPos;
+            marker.ConfigureGraveTrigger(cfg.graveHoleSize, cfg.graveHoleDepth);
+            Debug.Log($"[ProceduralMountainGenerator] Summit grave hole marker positioned accurately at {markerPos} with trigger bounds.");
         }
     }
 }

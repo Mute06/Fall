@@ -144,6 +144,24 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Range(0f, 0.1f)]
         public float safeZoneSlopeFactor = 0.03f;
 
+        [Header("2b. Summit Grave Hole (Resting Place for Coffin)")]
+        [Tooltip("Carves an excavated grave hole in the terrain where the golden path road ends in the last safe area.")]
+        public bool enableSummitGraveHole = true;
+
+        [Tooltip("Offset in meters from pathEndXZ where the grave hole is centered (default: 3.5m ahead along Z).")]
+        public Vector2 graveHoleOffset = new Vector2(0f, 3.5f);
+
+        [Tooltip("Dimensions of the grave hole (width along X, length along Z in meters).")]
+        public Vector2 graveHoleSize = new Vector2(2.6f, 4.2f);
+
+        [Tooltip("Depth in meters carved into the terrain for the grave pit.")]
+        [Range(0.5f, 3.5f)]
+        public float graveHoleDepth = 1.6f;
+
+        [Tooltip("Wall blend margin in meters defining how steep/sharp the excavated pit edges are.")]
+        [Range(0.2f, 2.0f)]
+        public float graveHoleBlendMargin = 0.6f;
+
         [Header("3. Golden Path (Random Walk with Momentum)")]
         [Tooltip("Step distance range (meters) between Golden Path anchor nodes (default: 8m to 12m).")]
         public Vector2 goldenPathStepRange = new Vector2(8f, 12f);
