@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace FirstPersonSystem
@@ -18,7 +16,7 @@ namespace FirstPersonSystem
                 forceDir.y = 0f;
                 forceDir.Normalize();
 
-                rb.AddForceAtPosition(forceDir * forceMagnitude, transform.position, ForceMode.Impulse);
+                rb.AddForceAtPosition(forceDir * forceMagnitude, hit.transform.position, ForceMode.Impulse);
             }
         }
     }

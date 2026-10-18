@@ -63,5 +63,5 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 9cd93e6b4948e0c4abc089546af87c38, type: 3}
   - {fileID: 8300000, guid: 97b97fae0b55ce141bff2005c510492e, type: 3}
   - {fileID: 8300000, guid: 96860d4e7cdc1f746906da7b7bc7a388, type: 3}
-  groundTag: Footsteps/Grass
+  groundTag: 
   indexOfTerrainTexture: 0

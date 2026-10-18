@@ -374,6 +374,7 @@ GameObject:
   - component: {fileID: 7213642980812342867}
   - component: {fileID: 395367094633235548}
   - component: {fileID: 2014966330540599744}
+  - component: {fileID: 7819234812390481234}
   m_Layer: 6
   m_Name: FirstPersonController
   m_TagString: Player
@@ -696,6 +697,38 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.WinchHUD
   showHUD: 1
+--- !u!114 &7819234812390481234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1656717197965110957}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 104d3738482945cd82b3928ae825bc5c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.CoffinDistanceWarningSystem
+  targetCoffin: {fileID: 0}
+  warningDistance: 30
+  maxDistance: 42
+  warningHysteresis: 1
+  horizontalDistanceOnly: 0
+  pullBackStiffness: 200
+  basePullForce: 15
+  maxPullForce: 60
+  showHUDWarning: 1
+  showDistanceMeter: 1
+  showDirectionCue: 1
+  showBoundaryVignette: 1
+  warningHeader: DON'T FORGET THE COFFIN
+  warningSubText: You are wandering too far from the coffin!
+  boundarySubText: MAXIMUM DISTANCE REACHED — RETURN TO COFFIN
+  customCanvasText: {fileID: 0}
+  enableAudio: 1
+  customWarningClip: {fileID: 0}
+  customBoundaryClip: {fileID: 0}
+  warningAudioInterval: 2.4
 --- !u!1 &1656717198781453387
 GameObject:
   m_ObjectHideFlags: 0

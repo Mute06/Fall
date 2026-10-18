@@ -93,9 +93,13 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Min(40f)]
         public float playableWidth = 120f;
 
-        [Tooltip("Extra border terrain margin on left/right/back/front beyond playable boundaries.")]
+        [Tooltip("Extra border terrain margin on left/right/front beyond playable boundaries.")]
         [Min(15f)]
         public float boundaryMargin = 35f;
+
+        [Tooltip("Distance (meters) of dense forest and 0-elevation flat terrain extending behind the player starting point.")]
+        [Min(10f)]
+        public float forestBehindPlayerDistance = 30f;
 
         [Tooltip("Start and End Z coordinates of the Golden Path climb (default: 0 to 250m).")]
         public Vector2 pathStartXZ = new Vector2(0f, 0f);
@@ -210,16 +214,28 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Tooltip("Optional steep slope TerrainLayer (Rock/Cliff) blended when slope > rockSlopeThreshold.")]
         public TerrainLayer rockTerrainLayer;
 
-        [Tooltip("Optional trail/safe-zone TerrainLayer (Dirt/Path) blended along the Golden Path.")]
+        [Tooltip("Trail TerrainLayer (Dirt/Path) used to paint the path the player is supposed to take.")]
         public TerrainLayer pathTerrainLayer;
 
-        [Tooltip("Slope angle (degrees) where rock texture starts blending in.")]
-        [Range(20f, 50f)]
-        public float rockSlopeStartDegrees = 28f;
+        [Tooltip("Core radius (meters) of the visible trail where pathTerrainLayer is 100% painted.")]
+        [Range(1f, 8f)]
+        public float pathTextureRadius = 3.2f;
 
-        [Tooltip("Slope angle (degrees) where rock texture reaches 100% weight.")]
+        [Tooltip("Outer blend distance (meters) where the path texture smoothly transitions into grass/rock.")]
+        [Range(0.5f, 6f)]
+        public float pathTextureBlend = 2.0f;
+
+        [Tooltip("Maximum opacity of the path texture along the trail [0..1]. (1 = fully visible solid dirt path).")]
+        [Range(0.2f, 1f)]
+        public float pathTextureOpacity = 1.0f;
+
+        [Tooltip("Slope angle (degrees) where rock texture starts blending in off the path.")]
+        [Range(20f, 50f)]
+        public float rockSlopeStartDegrees = 32f;
+
+        [Tooltip("Slope angle (degrees) where rock texture reaches 100% weight off the path.")]
         [Range(25f, 65f)]
-        public float rockSlopeFullDegrees = 40f;
+        public float rockSlopeFullDegrees = 45f;
 
         [Header("7. Core Asset Pools: Trees & Rocks")]
         [Tooltip("Layer name assigned to anchorable objects (trees/boulders) so WinchSystem can hook them.")]
@@ -443,5 +459,12 @@ namespace FirstPersonSystem.ProceduralGeneration
                 }
             }
         };
+
+        [Header("12. Distant Mountain Backdrops")]
+        [Tooltip("If true, automatically creates panoramic 2.5D mountain vista backdrops surrounding the mountain.")]
+        public bool enableMountainBackdrops = true;
+
+        [Tooltip("World Y coordinate (base elevation) for distant mountain backgrounds when generating.")]
+        public float mountainBackdropsBaseY = 0f;
     }
 }

@@ -14,15 +14,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FirstPersonSystem.ProceduralGeneration.MountainGenerationProfile
   playableWidth: 120
   boundaryMargin: 35
+  forestBehindPlayerDistance: 30
   pathStartXZ: {x: 0, y: 0}
   pathEndXZ: {x: 0, y: 250}
-  targetElevationGain: 85
+  targetElevationGain: 60
   terrainMaxHeightHeadroom: 60
   heightmapResolution: 513
   alphamapResolution: 512
   startingFlatLength: 24
   summitSafeLength: 22
-  climbTierCount: 5
+  climbTierCount: 4
   safeAreaRatioPerTier: 0.28
   slopeProgressionExponent: 1.45
   safeZoneSlopeFactor: 0.03
@@ -37,7 +38,7 @@ MonoBehaviour:
   primaryNoiseScale: 0.018
   mountainRoughnessAmplitude: 11
   noiseOctaves: 4
-  enableBoundaryCliffs: 0
+  enableBoundaryCliffs: 1
   boundaryCliffHeight: 32
   spawnInvisibleBoundaries: 1
   boundaryWallHeight: 45
@@ -45,11 +46,11 @@ MonoBehaviour:
   grassTerrainLayer: {fileID: 8574412962073106934, guid: 230d99471a8ceec4e91c4455a1f70044, type: 2}
   rockTerrainLayer: {fileID: 8574412962073106934, guid: 3d4206861a951f648b37ee22d964bf26, type: 2}
   pathTerrainLayer: {fileID: 8574412962073106934, guid: 1f75228414d5254428e95e86edd17bb3, type: 2}
-  pathTextureWidth: 3.5
-  pathSlopeFadeStartDegrees: 32
-  pathMaxSlopeDegrees: 38
-  rockSlopeStartDegrees: 38
-  rockSlopeFullDegrees: 50
+  pathTextureRadius: 3.2
+  pathTextureBlend: 2
+  pathTextureOpacity: 1
+  rockSlopeStartDegrees: 32
+  rockSlopeFullDegrees: 45
   anchorableLayerName: Anchorable
   randomizeTreeMaterials: 1
   treeMaterialDistribution: 0
@@ -85,7 +86,7 @@ MonoBehaviour:
     targetMaterialSlot: -1
   rockPrefabs:
   - label: Boulder
-    prefab: {fileID: 0}
+    prefab: {fileID: 6471947758543994162, guid: 49c964b1e9173db458f98d916eca1fa7, type: 3}
     weight: 40
     scaleRange: {x: 0.85, y: 1.35}
     alignToNormal: 0.65
@@ -93,8 +94,10 @@ MonoBehaviour:
     footprintRadius: 2
     verticalEmbedOffset: -0.25
     isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
   - label: Jagged Rock
-    prefab: {fileID: 0}
+    prefab: {fileID: 7136063639993495028, guid: 4a57cea51abc6b14f9b6b6d3737df377, type: 3}
     weight: 30
     scaleRange: {x: 0.85, y: 1.4}
     alignToNormal: 0.75
@@ -102,6 +105,19 @@ MonoBehaviour:
     footprintRadius: 1.8
     verticalEmbedOffset: -0.2
     isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
+  - label: Jagged Rock
+    prefab: {fileID: 1632836027950764503, guid: 26a99d9a4dc546f408ded7023e739979, type: 3}
+    weight: 51.5
+    scaleRange: {x: 1, y: 1.4}
+    alignToNormal: 0.75
+    randomTiltDegrees: 12.4
+    footprintRadius: 1.8
+    verticalEmbedOffset: -0.2
+    isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
   goldenPathTreeRatio: 0.75
   anchorsPerPathNode: 1
   bonusSecondAnchorChance: 0.35
@@ -124,6 +140,8 @@ MonoBehaviour:
     footprintRadius: 1.6
     verticalEmbedOffset: -0.02
     isAnchorable: 0
+    materialOverrides: []
+    targetMaterialSlot: -1
   - label: Deadfall Log
     prefab: {fileID: 0}
     weight: 35
@@ -133,6 +151,8 @@ MonoBehaviour:
     footprintRadius: 1.8
     verticalEmbedOffset: -0.1
     isAnchorable: 1
+    materialOverrides: []
+    targetMaterialSlot: -1
   highSlopeHazardChance: 0.65
   highSlopeHazards:
   - label: Loose Scree Zone (Rollback Hazard)
@@ -144,6 +164,10 @@ MonoBehaviour:
     footprintRadius: 2.5
     verticalEmbedOffset: -0.05
     isAnchorable: 0
+    materialOverrides: []
+    targetMaterialSlot: -1
   decorativePoissonRadius: 2.8
   decorativeSpawnChance: 0.65
   decorativeRules: []
+  enableMountainBackdrops: 1
+  mountainBackdropsBaseY: -30

@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace FirstPersonSystem
@@ -16,35 +14,95 @@ namespace FirstPersonSystem
 
         private void Start()
         {
-            terrainObject = Terrain.activeTerrain;
             playerTransform = transform;
+            EnsureTerrain();
+        }
+
+        private Terrain EnsureTerrain(Terrain preferred = null)
+        {
+            if (preferred != null)
+            {
+                terrainObject = preferred;
+                return terrainObject;
+            }
+
+            if (terrainObject == null)
+            {
+                terrainObject = Terrain.activeTerrain;
+                if (terrainObject == null)
+                {
+                    terrainObject = FindFirstObjectByType<Terrain>();
+                }
+            }
+
+            return terrainObject;
         }
 
         public void GetTerrainTexture()
         {
-            UpdatePosition();
-            CheckTexture();
+            Vector3 queryPos = playerTransform != null ? playerTransform.position : transform.position;
+            GetTerrainTexture(queryPos, null);
         }
 
-        void UpdatePosition()
+        public void GetTerrainTexture(Vector3 worldPosition, Terrain targetTerrain = null)
         {
-            Vector3 terrainPos = playerTransform.position - terrainObject.transform.position;
-            Vector3 mapPosition = new Vector3(terrainPos.x / terrainObject.terrainData.size.x, 0f, terrainPos.z / terrainObject.terrainData.size.z);
-            float xCoord = mapPosition.x * terrainObject.terrainData.alphamapWidth;
-            float zCoord = mapPosition.z * terrainObject.terrainData.alphamapHeight;
+            Terrain terrain = EnsureTerrain(targetTerrain);
+            if (terrain == null || terrain.terrainData == null) return;
 
-            posX = (int)xCoord;
-            posZ = (int)zCoord;
-        }
+            TerrainData tData = terrain.terrainData;
+            Vector3 tPos = terrain.transform.position;
+            Vector3 tSize = tData.size;
 
-        void CheckTexture()
-        {
-            float[,,] splatMap = terrainObject.terrainData.GetAlphamaps(posX, posZ, 1, 1);
+            if (tSize.x <= 0f || tSize.z <= 0f) return;
 
-            for (int i = 0; i < textureValues.Length; i++)
+            // Normalized coordinates (0 to 1) across the terrain surface
+            float normX = Mathf.Clamp01((worldPosition.x - tPos.x) / tSize.x);
+            float normZ = Mathf.Clamp01((worldPosition.z - tPos.z) / tSize.z);
+
+            // Alphamap resolution coordinates
+            int alphaW = tData.alphamapWidth;
+            int alphaH = tData.alphamapHeight;
+
+            posX = Mathf.Clamp((int)(normX * alphaW), 0, alphaW - 1);
+            posZ = Mathf.Clamp((int)(normZ * alphaH), 0, alphaH - 1);
+
+            float[,,] splatMap = tData.GetAlphamaps(posX, posZ, 1, 1);
+            int numLayers = splatMap.GetLength(2);
+
+            if (textureValues == null || textureValues.Length != numLayers)
+            {
+                textureValues = new float[numLayers];
+            }
+
+            for (int i = 0; i < numLayers; i++)
             {
                 textureValues[i] = splatMap[0, 0, i];
             }
+        }
+
+        /// <summary>
+        /// Samples the terrain alphamap at the given position and returns the layer index with the highest weight.
+        /// </summary>
+        public int GetDominantTextureIndex(Vector3 worldPosition, Terrain targetTerrain = null)
+        {
+            GetTerrainTexture(worldPosition, targetTerrain);
+
+            if (textureValues == null || textureValues.Length == 0)
+                return 0;
+
+            int dominantIndex = 0;
+            float maxWeight = -1f;
+
+            for (int i = 0; i < textureValues.Length; i++)
+            {
+                if (textureValues[i] > maxWeight)
+                {
+                    maxWeight = textureValues[i];
+                    dominantIndex = i;
+                }
+            }
+
+            return dominantIndex;
         }
     }
 }

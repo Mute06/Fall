@@ -26,9 +26,22 @@ namespace FirstPersonSystem.ProceduralGeneration
         [Tooltip("Optional Coffin Transform (or CoffinPullable) to place next to the player at the starting flat area.")]
         [SerializeField] private Transform coffinTransform;
 
-        [SerializeField] private Vector3 playerStartOffset = new Vector3(-1.5f, 1.15f, 6f);
-        [SerializeField] private Vector3 coffinStartOffset = new Vector3(1.2f, 0.6f, 8.5f);
+        [Tooltip("Optional Cabin Transform (e.g. 'Cabın' GameObject) to place near the player on the flat terrain.")]
+        [SerializeField] private Transform cabinTransform;
+
+        [SerializeField] private Vector3 playerStartOffset = new Vector3(-1.5f, 1.15f, 2f);
+        [SerializeField] private Vector3 coffinStartOffset = new Vector3(1.5f, 0.6f, 3.5f);
+        [SerializeField] private Vector3 cabinStartOffset = new Vector3(-8.5f, 0f, 1f);
+        [SerializeField] private Vector3 cabinRotationEuler = new Vector3(0f, -90f, 0f);
+        [SerializeField] private float cabinFootprintRadius = 7.5f;
         [SerializeField] private bool repositionActorsOnGenerate = true;
+
+        [Header("Distant Mountain Backdrops")]
+        [Tooltip("If enabled, overrides the profile's mountain backdrops Y coordinate with customBackdropBaseY.")]
+        [SerializeField] private bool overrideBackdropBaseY = false;
+
+        [Tooltip("Custom World Y coordinate for distant mountain backgrounds when generating.")]
+        [SerializeField] private float customBackdropBaseY = 0f;
 
         [Header("Debug & Scene Visualization")]
         [SerializeField] private bool drawGoldenPathGizmos = true;
@@ -82,7 +95,7 @@ namespace FirstPersonSystem.ProceduralGeneration
             SynthesizeHeightmap(activeProfile, terrainData, terrainOrigin, seed);
 
             // Stage 4: Splatmap Painting (Grass default ground + optional Rock/Path layers)
-            ApplyTerrainTextures(activeProfile, terrainData);
+            ApplyTerrainTextures(activeProfile, terrainData, terrainOrigin);
 
             // Prepare container hierarchy for spawned objects
             CreateSpawnContainers(
@@ -90,13 +103,18 @@ namespace FirstPersonSystem.ProceduralGeneration
                 out Transform denseForestParent,
                 out Transform hazardsParent,
                 out Transform decorParent,
-                out Transform boundariesParent);
+                out Transform boundariesParent,
+                out Transform backdropsParent);
 
             occupancyGrid.Clear();
 
             // Reserve spawn clearance at Player & Coffin start area
-            Vector2 startSpawnXZ = activeProfile.pathStartXZ + new Vector2(0f, 7f);
-            occupancyGrid.Register(startSpawnXZ, 4.5f);
+            Vector2 playerAreaXZ = activeProfile.pathStartXZ + new Vector2(0f, 2.5f);
+            occupancyGrid.Register(playerAreaXZ, 5.5f);
+
+            // Reserve cabin footprint so trees/rocks do not spawn inside the cabin
+            Vector2 cabinSpawnXZ = activeProfile.pathStartXZ + new Vector2(cabinStartOffset.x, cabinStartOffset.z);
+            occupancyGrid.Register(cabinSpawnXZ, cabinFootprintRadius);
 
             // Stage 5: Guaranteed-Solvable Anchor Spawning along Golden Path nodes
             // Uses a random tree and random rock from the shared treePrefabs & rockPrefabs pools
@@ -122,6 +140,12 @@ namespace FirstPersonSystem.ProceduralGeneration
             if (activeProfile.spawnInvisibleBoundaries)
             {
                 SpawnInvisibleBoundaryColliders(activeProfile, boundariesParent);
+            }
+
+            // Stage 8: Distant Mountain Vista Backdrops (2.5D concentric backdrop rings)
+            if (activeProfile.enableMountainBackdrops)
+            {
+                SpawnMountainBackdrops(activeProfile, backdropsParent, terrainOrigin, terrainData.size);
             }
 
             // Position Player & Coffin on the starting flat zone if requested
@@ -184,10 +208,16 @@ namespace FirstPersonSystem.ProceduralGeneration
             {
                 GameObject terrainGO = new GameObject("ProceduralMountainTerrain");
                 terrainGO.transform.SetParent(transform, false);
+                terrainGO.tag = "Terrain";
                 targetTerrain = terrainGO.AddComponent<Terrain>();
                 TerrainCollider tc = terrainGO.AddComponent<TerrainCollider>();
                 targetTerrain.terrainData = new TerrainData();
                 tc.terrainData = targetTerrain.terrainData;
+            }
+
+            if (!targetTerrain.gameObject.CompareTag("Terrain"))
+            {
+                targetTerrain.gameObject.tag = "Terrain";
             }
 
             if (targetTerrain.terrainData == null)
@@ -217,20 +247,21 @@ namespace FirstPersonSystem.ProceduralGeneration
             // Compute total terrain world dimensions
             float totalWidthX = cfg.playableWidth + cfg.boundaryMargin * 2f;
             float climbDistanceZ = Mathf.Max(50f, cfg.pathEndXZ.y - cfg.pathStartXZ.y);
-            float totalLengthZ = climbDistanceZ + cfg.summitSafeLength + cfg.boundaryMargin * 2f;
+            float totalLengthZ = cfg.forestBehindPlayerDistance + climbDistanceZ + cfg.summitSafeLength + cfg.boundaryMargin;
             float maxTerrainHeightY = cfg.targetElevationGain + (cfg.enableBoundaryCliffs ? cfg.boundaryCliffHeight : 0f) + cfg.terrainMaxHeightHeadroom;
 
             int hmRes = Mathf.ClosestPowerOfTwo(Mathf.Clamp(cfg.heightmapResolution - 1, 64, 2048)) + 1;
             terrainData.heightmapResolution = hmRes;
             terrainData.size = new Vector3(totalWidthX, maxTerrainHeightY, totalLengthZ);
 
-            // Position terrain so world (0, 0, 0) corresponds to the start of the Golden Path
+            // Position terrain so that the player starts ~forestBehindPlayerDistance meters ahead of the terrain's starting point
             // X is centered around 0: [-totalWidthX/2, +totalWidthX/2]
-            // Z starts at (pathStartXZ.y - boundaryMargin)
+            // Z starts at (pathStartXZ.y - forestBehindPlayerDistance)
+            float terrainStartZ = cfg.pathStartXZ.y - cfg.forestBehindPlayerDistance;
             terrainOrigin = new Vector3(
                 -totalWidthX * 0.5f,
                 0f,
-                cfg.pathStartXZ.y - cfg.boundaryMargin);
+                terrainStartZ);
 
             targetTerrain.transform.position = terrainOrigin;
         }
@@ -266,6 +297,16 @@ namespace FirstPersonSystem.ProceduralGeneration
             {
                 float normZ = (float)zIdx / (res - 1);
                 float worldZ = terrainOrigin.z + normZ * terrainSize.z;
+
+                // From terrain start up to player start position: strictly 0.0 elevation across entire width
+                if (worldZ <= startZ)
+                {
+                    for (int xIdx = 0; xIdx < res; xIdx++)
+                    {
+                        heights[zIdx, xIdx] = 0f;
+                    }
+                    continue;
+                }
 
                 // 1. Evaluate stepped longitudinal elevation profile (Flat start -> progressive slopes & safe plateaus -> 85m summit)
                 float baseElevation = GoldenPathGenerator.EvaluateLongitudinalElevation(worldZ, cfg, out bool isSafeZone);
@@ -374,11 +415,19 @@ namespace FirstPersonSystem.ProceduralGeneration
         /// <summary>
         /// Configures TerrainLayers (Grass as normal ground, plus optional Rock/Path layers)
         /// and paints the terrain alphamap so CheckTerrainTexture works out of the box.
+        /// <summary>
+        /// Configures TerrainLayers (Grass as normal ground, Rock on cliffs, Path on Golden Trail)
+        /// and paints the terrain alphamap so the Golden Path that the player is supposed to take
+        /// is clearly and visibly painted with pathTerrainLayer.
         /// </summary>
-        private void ApplyTerrainTextures(MountainGenerationProfile cfg, TerrainData terrainData)
+        private void ApplyTerrainTextures(
+            MountainGenerationProfile cfg,
+            TerrainData terrainData,
+            Vector3 terrainOrigin)
         {
             List<TerrainLayer> layers = new List<TerrainLayer>();
 
+            // Layer 0: Grass (base walkable ground)
             TerrainLayer grassLayer = cfg.grassTerrainLayer;
             if (grassLayer == null)
             {
@@ -391,9 +440,9 @@ namespace FirstPersonSystem.ProceduralGeneration
                     grassLayer = CreateFallbackGrassLayer();
                 }
             }
-
             layers.Add(grassLayer);
 
+            // Layer 1: Rock (steep cliffs off path)
             int rockLayerIndex = -1;
             if (cfg.rockTerrainLayer != null)
             {
@@ -401,11 +450,24 @@ namespace FirstPersonSystem.ProceduralGeneration
                 layers.Add(cfg.rockTerrainLayer);
             }
 
+            // Layer 2: Path (the trail the player takes)
             int pathLayerIndex = -1;
-            if (cfg.pathTerrainLayer != null)
+            TerrainLayer pathLayer = cfg.pathTerrainLayer;
+            if (pathLayer == null)
+            {
+                if (terrainData.terrainLayers != null && terrainData.terrainLayers.Length > 2 && terrainData.terrainLayers[2] != null)
+                {
+                    pathLayer = terrainData.terrainLayers[2];
+                }
+                else
+                {
+                    pathLayer = CreateFallbackPathLayer();
+                }
+            }
+            if (pathLayer != null)
             {
                 pathLayerIndex = layers.Count;
-                layers.Add(cfg.pathTerrainLayer);
+                layers.Add(pathLayer);
             }
 
             terrainData.terrainLayers = layers.ToArray();
@@ -415,8 +477,11 @@ namespace FirstPersonSystem.ProceduralGeneration
 
             int numLayers = layers.Count;
             float[,,] alphamaps = new float[alphaRes, alphaRes, numLayers];
-            Vector3 terrainOrigin = targetTerrain.transform.position;
             Vector3 terrainSize = terrainData.size;
+
+            float innerR = Mathf.Max(0.5f, cfg.pathTextureRadius);
+            float blendDist = Mathf.Max(0.2f, cfg.pathTextureBlend);
+            float pathOpacity = Mathf.Clamp01(cfg.pathTextureOpacity);
 
             for (int z = 0; z < alphaRes; z++)
             {
@@ -434,24 +499,40 @@ namespace FirstPersonSystem.ProceduralGeneration
                         continue;
                     }
 
-                    float slopeDeg = terrainData.GetSteepness(normX, normZ);
-
-                    float rockWeight = 0f;
-                    if (rockLayerIndex != -1)
-                    {
-                        rockWeight = Mathf.SmoothStep(
-                            0f, 1f,
-                            Mathf.InverseLerp(cfg.rockSlopeStartDegrees, cfg.rockSlopeFullDegrees, slopeDeg));
-                    }
+                    // 1. Distance to the Golden Path trail (with clean start & summit extensions)
+                    float distToPath = QueryDistanceToGoldenTrail(new Vector2(worldX, worldZ), cfg);
 
                     float pathWeight = 0f;
                     if (pathLayerIndex != -1)
                     {
-                        float distToPath = pathGenerator.QueryClosestPointOnPath(new Vector2(worldX, worldZ), out _, out _, out _);
-                        pathWeight = (1f - Mathf.SmoothStep(cfg.pathInnerCarveRadius * 0.6f, cfg.pathInnerCarveRadius * 1.6f, distToPath)) * (1f - rockWeight);
+                        if (distToPath <= innerR)
+                        {
+                            pathWeight = pathOpacity;
+                        }
+                        else if (distToPath < innerR + blendDist)
+                        {
+                            float u = (distToPath - innerR) / blendDist;
+                            float smooth = 1f - (u * u * (3f - 2f * u));
+                            pathWeight = smooth * pathOpacity;
+                        }
                     }
 
-                    float grassWeight = Mathf.Max(0f, 1f - rockWeight - pathWeight);
+                    // 2. Off-path terrain: blend Rock on steep slopes, Grass on walkable ground
+                    float nonPathWeight = 1f - pathWeight;
+
+                    float slopeDeg = terrainData.GetSteepness(normX, normZ);
+                    float rockFactor = 0f;
+                    if (rockLayerIndex != -1)
+                    {
+                        rockFactor = Mathf.SmoothStep(
+                            0f, 1f,
+                            Mathf.InverseLerp(cfg.rockSlopeStartDegrees, cfg.rockSlopeFullDegrees, slopeDeg));
+                    }
+
+                    float rockWeight = rockFactor * nonPathWeight;
+                    float grassWeight = Mathf.Max(0f, nonPathWeight - rockWeight);
+
+                    // Normalize weights so they sum to 1.0
                     float sum = grassWeight + rockWeight + pathWeight;
                     if (sum > 0.0001f)
                     {
@@ -467,6 +548,62 @@ namespace FirstPersonSystem.ProceduralGeneration
             }
 
             terrainData.SetAlphamaps(0, 0, alphamaps);
+        }
+
+        private float QueryDistanceToGoldenTrail(Vector2 worldXZ, MountainGenerationProfile cfg)
+        {
+            IReadOnlyList<GoldenPathNode> nodes = pathGenerator.Nodes;
+            if (nodes == null || nodes.Count == 0) return float.MaxValue;
+
+            float distToPolyline = pathGenerator.QueryClosestPointOnPath(worldXZ, out _, out _, out _);
+
+            // Backward extension to spawn zone (Z < startXZ.y)
+            if (worldXZ.y < cfg.pathStartXZ.y)
+            {
+                Vector2 startPos = nodes[0].positionXZ;
+                Vector2 startFwd = nodes[0].forwardXZ.sqrMagnitude > 0.001f ? nodes[0].forwardXZ : new Vector2(0f, 1f);
+                Vector2 diff = worldXZ - startPos;
+                float proj = Vector2.Dot(diff, startFwd);
+                // Connect player and cabin starting area without paving the entire back-forest
+                if (proj < 0f && proj >= -8f)
+                {
+                    Vector2 closestOnRay = startPos + startFwd * proj;
+                    float rayDist = Vector2.Distance(worldXZ, closestOnRay);
+                    return Mathf.Min(distToPolyline, rayDist);
+                }
+            }
+            // Forward extension to summit safe zone (Z > endXZ.y)
+            else if (worldXZ.y > cfg.pathEndXZ.y)
+            {
+                GoldenPathNode lastNode = nodes[nodes.Count - 1];
+                Vector2 endPos = lastNode.positionXZ;
+                Vector2 endFwd = lastNode.forwardXZ.sqrMagnitude > 0.001f ? lastNode.forwardXZ : new Vector2(0f, 1f);
+                Vector2 diff = worldXZ - endPos;
+                float proj = Vector2.Dot(diff, endFwd);
+                if (proj > 0f && proj <= (cfg.summitSafeLength + cfg.boundaryMargin * 0.5f))
+                {
+                    Vector2 closestOnRay = endPos + endFwd * proj;
+                    float rayDist = Vector2.Distance(worldXZ, closestOnRay);
+                    return Mathf.Min(distToPolyline, rayDist);
+                }
+            }
+
+            return distToPolyline;
+        }
+
+        private TerrainLayer CreateFallbackPathLayer()
+        {
+            TerrainLayer layer = new TerrainLayer();
+            layer.name = "ProceduralPathLayer";
+            Texture2D pathTex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            Color pathColor = new Color(0.52f, 0.38f, 0.22f, 1f); // Distinct earthy trail brown
+            Color[] pixels = new Color[16];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = pathColor;
+            pathTex.SetPixels(pixels);
+            pathTex.Apply();
+            layer.diffuseTexture = pathTex;
+            layer.tileSize = new Vector2(3f, 3f);
+            return layer;
         }
 
         private TerrainLayer CreateFallbackGrassLayer()
@@ -489,7 +626,8 @@ namespace FirstPersonSystem.ProceduralGeneration
             out Transform denseForestParent,
             out Transform hazardsParent,
             out Transform decorParent,
-            out Transform boundariesParent)
+            out Transform boundariesParent,
+            out Transform backdropsParent)
         {
             GameObject rootGO = new GameObject("Generated_Mountain_Objects");
             rootGO.transform.SetParent(transform, false);
@@ -514,6 +652,28 @@ namespace FirstPersonSystem.ProceduralGeneration
             GameObject boundsGO = new GameObject("BoundaryColliders");
             boundsGO.transform.SetParent(generatedRoot, false);
             boundariesParent = boundsGO.transform;
+
+            GameObject backdropsGO = new GameObject("5_Distant_Mountain_Backdrops");
+            backdropsGO.transform.SetParent(generatedRoot, false);
+            backdropsParent = backdropsGO.transform;
+        }
+
+        private void SpawnMountainBackdrops(
+            MountainGenerationProfile cfg,
+            Transform parent,
+            Vector3 terrainOrigin,
+            Vector3 terrainSize)
+        {
+            MountainBackdropManager backdropMgr = parent.gameObject.GetComponent<MountainBackdropManager>();
+            if (backdropMgr == null)
+            {
+                backdropMgr = parent.gameObject.AddComponent<MountainBackdropManager>();
+            }
+
+            backdropMgr.InitializeDefaultLayers();
+            float targetY = overrideBackdropBaseY ? customBackdropBaseY : cfg.mountainBackdropsBaseY;
+            backdropMgr.SetBaseY(targetY);
+            backdropMgr.GenerateBackdrops();
         }
 
         /// <summary>
@@ -597,7 +757,8 @@ namespace FirstPersonSystem.ProceduralGeneration
             System.Random rng = new System.Random(stageSeed);
 
             float halfWidth = cfg.playableWidth * 0.5f;
-            float zMin = cfg.pathStartXZ.y;
+            float terrainStartZ = cfg.pathStartXZ.y - cfg.forestBehindPlayerDistance;
+            float zMin = terrainStartZ + 2.5f;
             float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength;
 
             Rect sampleBounds = new Rect(-halfWidth, zMin, halfWidth * 2f, zMax - zMin);
@@ -733,7 +894,8 @@ namespace FirstPersonSystem.ProceduralGeneration
             System.Random rng = new System.Random(stageSeed);
 
             float halfWidth = cfg.playableWidth * 0.5f;
-            float zMin = cfg.pathStartXZ.y;
+            float terrainStartZ = cfg.pathStartXZ.y - cfg.forestBehindPlayerDistance;
+            float zMin = terrainStartZ + 2.5f;
             float zMax = cfg.pathEndXZ.y + cfg.summitSafeLength;
 
             Rect sampleBounds = new Rect(-halfWidth, zMin, halfWidth * 2f, zMax - zMin);
@@ -817,10 +979,10 @@ namespace FirstPersonSystem.ProceduralGeneration
             Transform parent)
         {
             float halfWidth = cfg.playableWidth * 0.5f;
-            float startZ = cfg.pathStartXZ.y;
+            float terrainStartZ = cfg.pathStartXZ.y - cfg.forestBehindPlayerDistance;
             float summitEndZ = cfg.pathEndXZ.y + cfg.summitSafeLength;
-            float lengthZ = summitEndZ - startZ;
-            float midZ = (startZ + summitEndZ) * 0.5f;
+            float lengthZ = summitEndZ - terrainStartZ;
+            float midZ = (terrainStartZ + summitEndZ) * 0.5f;
 
             float wallH = cfg.boundaryWallHeight;
             float wallT = cfg.boundaryWallThickness;
@@ -840,10 +1002,10 @@ namespace FirstPersonSystem.ProceduralGeneration
                 new Vector3(wallT, wallH * 2.5f, lengthZ + wallT * 2f),
                 parent);
 
-            // 3. South Wall (Start / Back: Z = startZ)
+            // 3. South Wall (Start / Back: Z = terrainStartZ)
             CreateBoundaryWall(
                 "Boundary_South_Start",
-                new Vector3(0f, halfElev, startZ - wallT * 0.5f),
+                new Vector3(0f, halfElev, terrainStartZ - wallT * 0.5f),
                 new Vector3(cfg.playableWidth + wallT * 2f, wallH * 2.5f, wallT),
                 parent);
 
@@ -1156,6 +1318,14 @@ namespace FirstPersonSystem.ProceduralGeneration
                 if (coffin != null) coffinTransform = coffin.transform;
             }
 
+            if (cabinTransform == null)
+            {
+                // Auto-resolve Cabin GameObject in scene by checking standard names (supports Turkish dotless 'ı' or standard 'i')
+                GameObject cabinObj = GameObject.Find("Cabın");
+                if (cabinObj == null) cabinObj = GameObject.Find("Cabin");
+                if (cabinObj != null) cabinTransform = cabinObj.transform;
+            }
+
             Vector2 startXZ = cfg.pathStartXZ;
 
             if (playerTransform != null)
@@ -1184,6 +1354,42 @@ namespace FirstPersonSystem.ProceduralGeneration
                     }
                     coffinTransform.position = new Vector3(coffinXZ.x, groundY + coffinStartOffset.y, coffinXZ.y);
                     coffinTransform.rotation = Quaternion.FromToRotation(Vector3.up, normal);
+                }
+            }
+
+            if (cabinTransform != null)
+            {
+                cabinTransform.rotation = Quaternion.Euler(cabinRotationEuler);
+                Vector2 cabinXZ = startXZ + new Vector2(cabinStartOffset.x, cabinStartOffset.z);
+
+                if (SampleTerrainDataAtWorldXZ(cabinXZ, out float groundY, out _, out _))
+                {
+                    // Temporarily set position at groundY to sample its bounding box with current rotation
+                    cabinTransform.position = new Vector3(cabinXZ.x, groundY, cabinXZ.y);
+
+                    float bottomOffset = 0f;
+                    Renderer rend = cabinTransform.GetComponentInChildren<Renderer>();
+                    if (rend != null)
+                    {
+                        bottomOffset = cabinTransform.position.y - rend.bounds.min.y;
+                    }
+                    else
+                    {
+                        Collider col = cabinTransform.GetComponentInChildren<Collider>();
+                        if (col != null)
+                        {
+                            bottomOffset = cabinTransform.position.y - col.bounds.min.y;
+                        }
+                    }
+
+                    cabinTransform.position = new Vector3(cabinXZ.x, groundY + bottomOffset + cabinStartOffset.y, cabinXZ.y);
+
+                    Rigidbody rb = cabinTransform.GetComponent<Rigidbody>();
+                    if (rb != null)
+                    {
+                        rb.linearVelocity = Vector3.zero;
+                        rb.angularVelocity = Vector3.zero;
+                    }
                 }
             }
         }
@@ -1244,10 +1450,10 @@ namespace FirstPersonSystem.ProceduralGeneration
                 {
                     Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.35f);
                     float halfWidth = cfg.playableWidth * 0.5f;
-                    float startZ = cfg.pathStartXZ.y;
+                    float terrainStartZ = cfg.pathStartXZ.y - cfg.forestBehindPlayerDistance;
                     float summitEndZ = cfg.pathEndXZ.y + cfg.summitSafeLength;
-                    float lengthZ = summitEndZ - startZ;
-                    float midZ = (startZ + summitEndZ) * 0.5f;
+                    float lengthZ = summitEndZ - terrainStartZ;
+                    float midZ = (terrainStartZ + summitEndZ) * 0.5f;
                     float halfElev = cfg.targetElevationGain * 0.5f;
                     float wallH = cfg.boundaryWallHeight;
 

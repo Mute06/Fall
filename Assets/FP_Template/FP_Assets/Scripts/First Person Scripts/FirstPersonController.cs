@@ -338,7 +338,8 @@ namespace FirstPersonSystem
 
         public void ApplyExternalDisplacement(Vector3 displacement)
         {
-            characterController.Move(displacement);
+            if (characterController == null) characterController = GetComponent<CharacterController>();
+            if (characterController != null) characterController.Move(displacement);
         }
 
 

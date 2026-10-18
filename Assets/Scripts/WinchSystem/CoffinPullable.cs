@@ -20,6 +20,8 @@ namespace FirstPersonSystem
         private bool isRopeConnected = false;
         private Transform activeHookPoint;
 
+        public static CoffinPullable Instance { get; private set; }
+
         public Transform TowHookPoint => activeHookPoint != null ? activeHookPoint : (defaultTowHookPoint != null ? defaultTowHookPoint : transform);
         public Transform ActiveHookPoint => activeHookPoint;
         public Rigidbody Rb => rb;
@@ -28,6 +30,7 @@ namespace FirstPersonSystem
         public override void Awake()
         {
             base.Awake();
+            if (Instance == null) Instance = this;
             rb = GetComponent<Rigidbody>();
 
             // Lower center of mass to stabilize coffin against rolling and pitching
@@ -156,6 +159,11 @@ namespace FirstPersonSystem
 
         public override void OnInteractEnd(FirstPersonController player)
         {
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
     }
 }

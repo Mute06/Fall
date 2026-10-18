@@ -36,6 +36,7 @@ namespace FirstPersonSystem
         private Interactor interactor;
         private InputManager input;
         private WinchEnergySystem energySystem;
+        private CoffinDistanceWarningSystem coffinWarningSystem;
 
         // Runtime State
         private WinchState currentState = WinchState.Idle;
@@ -46,6 +47,7 @@ namespace FirstPersonSystem
         private bool isWinching = false;
         private float attachCooldown = 0f;
         private float currentAppliedPullForce = 0f;
+        private bool isAimingAtAnchorable = false;
 
         public WinchState CurrentState => currentState;
         public bool IsCarryingRope => currentState == WinchState.CarryingRope;
@@ -53,6 +55,8 @@ namespace FirstPersonSystem
         public float CurrentRopeLength => currentRopeLength;
         public float MaxRopeLength => maxRopeLength;
         public bool IsWinching => isWinching;
+        public bool IsAimingAtAnchorable => isAimingAtAnchorable;
+        public CoffinDistanceWarningSystem CoffinWarningSystem => coffinWarningSystem;
 
         public event Action<WinchState> OnWinchStateChanged;
 
@@ -72,6 +76,12 @@ namespace FirstPersonSystem
             if (energySystem == null)
             {
                 energySystem = gameObject.AddComponent<WinchEnergySystem>();
+            }
+
+            coffinWarningSystem = GetComponent<CoffinDistanceWarningSystem>();
+            if (coffinWarningSystem == null)
+            {
+                coffinWarningSystem = gameObject.AddComponent<CoffinDistanceWarningSystem>();
             }
 
             if (anchorableLayer.value == 0)
@@ -135,11 +145,13 @@ namespace FirstPersonSystem
 
         private void HandleIdleState()
         {
+            isAimingAtAnchorable = false;
             if (interactor == null || interactor.Cam == null) return;
 
             Ray ray = interactor.Cam.ViewportPointToRay(interactor.InteractionRayPoint);
             if (Physics.Raycast(ray, out RaycastHit hit, interactor.InteractionDistance, anchorableLayer))
             {
+                isAimingAtAnchorable = true;
                 if (input.GetInput_Interacted())
                 {
                     PlaceAnchor(hit.point, hit.normal, hit.collider.transform);

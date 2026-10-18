@@ -253,7 +253,14 @@ namespace FirstPersonSystem.ProceduralGeneration
             float flatStartLen = Mathf.Clamp(profile.startingFlatLength, 5f, (endZ - startZ) * 0.35f);
             float climbStartZ = startZ + flatStartLen;
 
-            // 1. Before or within initial starting flat area
+            // 1. From terrain start up to player start position: strictly 0.0 elevation
+            if (worldZ <= startZ)
+            {
+                isSafeZone = true;
+                return 0f;
+            }
+
+            // Initial flat buffer right after player start before first slope
             if (worldZ <= climbStartZ)
             {
                 isSafeZone = true;
