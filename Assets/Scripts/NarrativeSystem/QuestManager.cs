@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using FirstPersonSystem.SceneManagement;
 
 namespace FirstPersonSystem.Narrative
 {
@@ -29,6 +32,16 @@ namespace FirstPersonSystem.Narrative
         [Tooltip("Distance from summit target within which the coffin is considered successfully delivered.")]
         [SerializeField] private float completionDistance = 6.0f;
 
+        [Header("Endgame Scene Transition")]
+        [Tooltip("If enabled, automatically loads the start scene after the quest is completed and delay elapses.")]
+        [SerializeField] private bool returnToStartSceneOnComplete = true;
+
+        [Tooltip("Delay in seconds after quest completion before returning to the start scene.")]
+        [SerializeField] private float returnToStartSceneDelay = 10.0f;
+
+        [Tooltip("Name of the start scene to return to.")]
+        [SerializeField] private string startSceneName = "Start";
+
         [Header("Audio")]
         [SerializeField] private AudioClip questTriggeredSound;
         [SerializeField] private AudioClip questCompletedSound;
@@ -39,6 +52,7 @@ namespace FirstPersonSystem.Narrative
         private string activeTitle = "";
         private string activeObjective = "";
         private CoffinPullable trackedCoffin;
+        private Coroutine returnToStartCoroutine;
 
         // Events
         public event Action<string, string> OnQuestActivated;
@@ -48,6 +62,21 @@ namespace FirstPersonSystem.Narrative
         public string ActiveTitle => activeTitle;
         public string ActiveObjective => activeObjective;
         public Transform SummitTarget => summitRestingTarget;
+        public bool ReturnToStartSceneOnComplete
+        {
+            get => returnToStartSceneOnComplete;
+            set => returnToStartSceneOnComplete = value;
+        }
+        public float ReturnToStartSceneDelay
+        {
+            get => returnToStartSceneDelay;
+            set => returnToStartSceneDelay = value;
+        }
+        public string StartSceneName
+        {
+            get => startSceneName;
+            set => startSceneName = value;
+        }
 
         private void Awake()
         {
@@ -141,6 +170,15 @@ namespace FirstPersonSystem.Narrative
             OnQuestActivated?.Invoke(activeTitle, activeObjective);
         }
 
+        private void OnDisable()
+        {
+            if (returnToStartCoroutine != null)
+            {
+                StopCoroutine(returnToStartCoroutine);
+                returnToStartCoroutine = null;
+            }
+        }
+
         /// <summary>
         /// Marks the current quest as completed.
         /// </summary>
@@ -158,6 +196,51 @@ namespace FirstPersonSystem.Narrative
             }
 
             OnQuestCompleted?.Invoke(activeTitle);
+
+            // Automatically return to the start scene after 10 seconds has passed
+            if (Application.isPlaying && returnToStartSceneOnComplete)
+            {
+                if (returnToStartCoroutine != null)
+                {
+                    StopCoroutine(returnToStartCoroutine);
+                }
+                returnToStartCoroutine = StartCoroutine(ReturnToStartSceneRoutine(returnToStartSceneDelay));
+            }
+        }
+
+        private IEnumerator ReturnToStartSceneRoutine(float delay)
+        {
+            // Allow the player to witness the summit resting completion and farewell dialogue,
+            // then smoothly fade out to black during the final 2 seconds of the 10-second countdown.
+            float fadeDuration = 2.0f;
+            float waitBeforeFade = Mathf.Max(0f, delay - fadeDuration);
+
+            if (waitBeforeFade > 0f)
+            {
+                yield return new WaitForSeconds(waitBeforeFade);
+            }
+
+            float remainingFadeTime = Mathf.Min(fadeDuration, delay);
+            if (remainingFadeTime > 0f)
+            {
+                LoadingScreenManager.FadeToBlack(remainingFadeTime);
+                yield return new WaitForSeconds(remainingFadeTime);
+            }
+
+            Debug.Log($"[QuestManager] {delay:F1} seconds elapsed since quest completion. Returning to '{startSceneName}' scene.");
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+
+            try
+            {
+                LoadingScreenManager.LoadScene(startSceneName);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[QuestManager] LoadingScreenManager.LoadScene failed: {ex.Message}. Loading directly via SceneManager.");
+                SceneManager.LoadSceneAsync(startSceneName);
+            }
         }
 
         /// <summary>

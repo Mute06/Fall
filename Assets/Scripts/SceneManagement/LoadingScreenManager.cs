@@ -122,6 +122,14 @@ namespace FirstPersonSystem.SceneManagement
         }
 
         /// <summary>
+        /// Smoothly fades the screen to solid black over the specified duration.
+        /// </summary>
+        public static void FadeToBlack(float duration = 1.5f)
+        {
+            Instance.InternalFadeToBlack(duration);
+        }
+
+        /// <summary>
         /// Loads the next scene in the build settings while displaying the black loading screen
         /// until procedural terrain generation is fully completed.
         /// </summary>
@@ -215,6 +223,45 @@ namespace FirstPersonSystem.SceneManagement
             activeFadeCoroutine = null;
         }
 
+        private void InternalFadeToBlack(float duration)
+        {
+            EnsureOverlayCreated();
+
+            if (activeFadeCoroutine != null)
+            {
+                StopCoroutine(activeFadeCoroutine);
+            }
+
+            overlayCanvas.enabled = true;
+            overlayCanvasGroup.blocksRaycasts = true;
+            overlayCanvasGroup.interactable = true;
+
+            if (duration <= 0f)
+            {
+                overlayCanvasGroup.alpha = 1f;
+            }
+            else
+            {
+                activeFadeCoroutine = StartCoroutine(FadeInRoutine(duration));
+            }
+        }
+
+        private IEnumerator FadeInRoutine(float duration)
+        {
+            float elapsed = 0f;
+            float startAlpha = overlayCanvasGroup.alpha;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                overlayCanvasGroup.alpha = Mathf.Lerp(startAlpha, 1f, elapsed / duration);
+                yield return null;
+            }
+
+            overlayCanvasGroup.alpha = 1f;
+            activeFadeCoroutine = null;
+        }
+
         private void InternalLoadScene(int buildIndex, string sceneName)
         {
             if (activeLoadCoroutine != null)
@@ -253,32 +300,47 @@ namespace FirstPersonSystem.SceneManagement
                 }
             }
 
-            // 4. Scene is loaded! Now check for ProceduralMountainGenerator in the new scene
-            ProceduralMountainGenerator generator = null;
-            float searchTimeout = 2.0f;
-            float elapsedSearch = 0f;
+            // 4. Scene is loaded! Check if target is a menu/start scene
+            Scene currentScene = SceneManager.GetActiveScene();
+            bool isMenuScene = currentScene.buildIndex == 0 ||
+                               currentScene.name.Equals("Start", StringComparison.OrdinalIgnoreCase) ||
+                               (sceneName != null && sceneName.Equals("Start", StringComparison.OrdinalIgnoreCase)) ||
+                               (buildIndex == 0);
 
-            while (generator == null && elapsedSearch < searchTimeout)
+            if (!isMenuScene)
             {
-                generator = FindAnyObjectByType<ProceduralMountainGenerator>();
-                if (generator != null) break;
-                elapsedSearch += Time.unscaledDeltaTime;
-                yield return null;
-            }
+                ProceduralMountainGenerator generator = null;
+                float searchTimeout = 2.0f;
+                float elapsedSearch = 0f;
 
-            if (generator != null)
-            {
-                // If the generator hasn't generated yet and isn't generating, run it with a random seed
-                if (!generator.IsGenerating && !generator.IsGenerationCompleted)
+                while (generator == null && elapsedSearch < searchTimeout)
                 {
-                    generator.GenerateWithRandomSeed();
-                }
-
-                // Wait until generation is completely finished
-                while (generator.IsGenerating || !generator.IsGenerationCompleted)
-                {
+                    generator = FindAnyObjectByType<ProceduralMountainGenerator>();
+                    if (generator != null) break;
+                    elapsedSearch += Time.unscaledDeltaTime;
                     yield return null;
                 }
+
+                if (generator != null)
+                {
+                    // If the generator hasn't generated yet and isn't generating, run it with a random seed
+                    if (!generator.IsGenerating && !generator.IsGenerationCompleted)
+                    {
+                        generator.GenerateWithRandomSeed();
+                    }
+
+                    // Wait until generation is completely finished
+                    while (generator.IsGenerating || !generator.IsGenerationCompleted)
+                    {
+                        yield return null;
+                    }
+                }
+            }
+            else
+            {
+                // Unhide and unlock cursor for menu scene
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
             }
 
             // 5. Allow newly generated scene objects, terrain data, physics, and camera to settle

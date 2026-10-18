@@ -25,10 +25,20 @@ namespace FirstPersonSystem.SceneManagement
             }
         }
 
+        private void Start()
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
         private void OnEnable()
         {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+
             if (startButton != null)
             {
+                startButton.interactable = true;
                 startButton.onClick.AddListener(OnStartButtonClicked);
             }
         }
